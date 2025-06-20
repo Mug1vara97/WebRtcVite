@@ -96,33 +96,35 @@ export class NoiseSuppressionManager {
         return false;
       }
 
-      // Disconnect all nodes first
-      this.sourceNode.disconnect();
-      if (this.noiseNode) {
-        this.noiseNode.disconnect();
-        this.noiseNode.destroy?.();
-        this.noiseNode = null;
-      }
-      this.gainNode.disconnect();
+      console.log('Enabling noise suppression with mode:', mode);
+      console.log('Current audio track state:', {
+        tracks: this.stream.getAudioTracks().length,
+        enabled: this.stream.getAudioTracks()[0]?.enabled,
+        readyState: this.stream.getAudioTracks()[0]?.readyState
+      });
 
-      // Create new noise node based on mode
+      // Create new noise node first, before disconnecting anything
+      let newNoiseNode;
       switch (mode) {
         case 'rnnoise': {
-          this.noiseNode = new RnnoiseWorkletNode(this.audioContext, {
+          console.log('Creating RNNoise node...');
+          newNoiseNode = new RnnoiseWorkletNode(this.audioContext, {
             wasmBinary: this.wasmBinaries.rnnoise,
             maxChannels: 1
           });
           break;
         }
         case 'speex': {
-          this.noiseNode = new SpeexWorkletNode(this.audioContext, {
+          console.log('Creating Speex node...');
+          newNoiseNode = new SpeexWorkletNode(this.audioContext, {
             wasmBinary: this.wasmBinaries.speex,
             maxChannels: 1
           });
           break;
         }
         case 'noisegate': {
-          this.noiseNode = new NoiseGateWorkletNode(this.audioContext, {
+          console.log('Creating NoiseGate node...');
+          newNoiseNode = new NoiseGateWorkletNode(this.audioContext, {
             openThreshold: -50,
             closeThreshold: -60,
             holdMs: 90,
@@ -134,32 +136,75 @@ export class NoiseSuppressionManager {
           throw new Error(`Unsupported noise suppression mode: ${mode}`);
       }
 
-      // Connect nodes with noise suppression
-      this.sourceNode.connect(this.noiseNode);
-      this.noiseNode.connect(this.gainNode);
-      this.gainNode.connect(this.destinationNode);
+      // Create a new destination node
+      const newDestination = this.audioContext.createMediaStreamDestination();
+
+      // Connect the new chain first
+      console.log('Connecting new audio chain...');
+      this.sourceNode.connect(newNoiseNode);
+      newNoiseNode.connect(this.gainNode);
+      this.gainNode.connect(newDestination);
 
       // Get the processed track
-      const processedTrack = this.destinationNode.stream.getAudioTracks()[0];
+      const processedTrack = newDestination.stream.getAudioTracks()[0];
       
-      // Replace the track in the stream
-      if (processedTrack) {
-        const oldTrack = this.stream.getAudioTracks()[0];
-        if (oldTrack) {
-          oldTrack.enabled = false;
-          this.stream.removeTrack(oldTrack);
-          if (oldTrack !== this.originalTrack) {
-            oldTrack.stop();
-          }
-        }
-        this.stream.addTrack(processedTrack);
+      if (!processedTrack) {
+        throw new Error('Failed to get processed audio track');
       }
+
+      console.log('New processed track created:', {
+        id: processedTrack.id,
+        enabled: processedTrack.enabled,
+        readyState: processedTrack.readyState
+      });
+
+      // Now disconnect the old chain
+      console.log('Disconnecting old audio chain...');
+      this.sourceNode.disconnect();
+      if (this.noiseNode) {
+        this.noiseNode.disconnect();
+        this.noiseNode.destroy?.();
+      }
+      this.gainNode.disconnect();
+      if (this.destinationNode) {
+        this.destinationNode.disconnect();
+      }
+
+      // Update references
+      this.noiseNode = newNoiseNode;
+      this.destinationNode = newDestination;
+
+      // Replace the track in the stream
+      console.log('Replacing audio track...');
+      const oldTrack = this.stream.getAudioTracks()[0];
+      if (oldTrack) {
+        console.log('Removing old track:', {
+          id: oldTrack.id,
+          enabled: oldTrack.enabled,
+          readyState: oldTrack.readyState
+        });
+        oldTrack.enabled = false;
+        this.stream.removeTrack(oldTrack);
+        if (oldTrack !== this.originalTrack) {
+          oldTrack.stop();
+        }
+      }
+
+      this.stream.addTrack(processedTrack);
+      processedTrack.enabled = true;
+
+      console.log('Final audio track state:', {
+        tracks: this.stream.getAudioTracks().length,
+        enabled: this.stream.getAudioTracks()[0]?.enabled,
+        readyState: this.stream.getAudioTracks()[0]?.readyState
+      });
 
       console.log(`Noise suppression enabled with mode: ${mode}`);
       return true;
     } catch (error) {
       console.error('Error enabling noise suppression:', error);
       // On error, try to restore original audio
+      console.log('Attempting to restore original audio...');
       await this.disable();
       return false;
     }
@@ -167,38 +212,79 @@ export class NoiseSuppressionManager {
 
   async disable() {
     try {
-      // Disconnect all nodes
-      if (this.sourceNode) {
-        this.sourceNode.disconnect();
+      console.log('Disabling noise suppression...');
+      console.log('Current audio track state:', {
+        tracks: this.stream.getAudioTracks().length,
+        enabled: this.stream.getAudioTracks()[0]?.enabled,
+        readyState: this.stream.getAudioTracks()[0]?.readyState
+      });
+
+      // Create a new destination node
+      const newDestination = this.audioContext.createMediaStreamDestination();
+
+      // Connect source directly to destination first
+      console.log('Setting up direct audio chain...');
+      this.sourceNode.connect(this.gainNode);
+      this.gainNode.connect(newDestination);
+
+      // Get the direct track
+      const directTrack = newDestination.stream.getAudioTracks()[0];
+
+      if (!directTrack) {
+        throw new Error('Failed to get direct audio track');
       }
-      
+
+      console.log('New direct track created:', {
+        id: directTrack.id,
+        enabled: directTrack.enabled,
+        readyState: directTrack.readyState
+      });
+
+      // Now disconnect the old chain
+      console.log('Disconnecting old audio chain...');
+      this.sourceNode.disconnect();
       if (this.noiseNode) {
         this.noiseNode.disconnect();
         this.noiseNode.destroy?.();
         this.noiseNode = null;
       }
-
-      if (this.gainNode) {
-        this.gainNode.disconnect();
+      this.gainNode.disconnect();
+      if (this.destinationNode) {
+        this.destinationNode.disconnect();
       }
 
-      // Connect source directly to destination
-      this.sourceNode.connect(this.gainNode);
-      this.gainNode.connect(this.destinationNode);
+      // Update destination reference
+      this.destinationNode = newDestination;
 
-      // Restore original track
-      if (this.stream && this.originalTrack) {
-        const currentTrack = this.stream.getAudioTracks()[0];
-        if (currentTrack && currentTrack !== this.originalTrack) {
-          currentTrack.enabled = false;
-          this.stream.removeTrack(currentTrack);
+      // Replace track in the stream
+      console.log('Replacing with original track...');
+      const currentTrack = this.stream.getAudioTracks()[0];
+      if (currentTrack) {
+        console.log('Removing current track:', {
+          id: currentTrack.id,
+          enabled: currentTrack.enabled,
+          readyState: currentTrack.readyState
+        });
+        currentTrack.enabled = false;
+        this.stream.removeTrack(currentTrack);
+        if (currentTrack !== this.originalTrack) {
           currentTrack.stop();
         }
-        if (!this.stream.getAudioTracks().includes(this.originalTrack)) {
-          this.stream.addTrack(this.originalTrack);
-        }
-        this.originalTrack.enabled = true;
       }
+
+      // Use the original track if available, otherwise use the direct track
+      const trackToAdd = this.originalTrack || directTrack;
+      if (!this.stream.getAudioTracks().includes(trackToAdd)) {
+        this.stream.addTrack(trackToAdd);
+      }
+      trackToAdd.enabled = true;
+
+      console.log('Final audio track state:', {
+        tracks: this.stream.getAudioTracks().length,
+        enabled: this.stream.getAudioTracks()[0]?.enabled,
+        readyState: this.stream.getAudioTracks()[0]?.readyState,
+        usingOriginal: trackToAdd === this.originalTrack
+      });
 
       console.log('Noise suppression disabled');
       return true;
