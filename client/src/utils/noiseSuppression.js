@@ -1,13 +1,33 @@
-import { RnNoiseNode } from '@sapphi-red/web-noise-suppressor'
+import {
+  loadSpeex,
+  SpeexWorkletNode,
+  loadRnnoise,
+  RnnoiseWorkletNode,
+  NoiseGateWorkletNode
+} from '@sapphi-red/web-noise-suppressor'
+import speexWorkletPath from '@sapphi-red/web-noise-suppressor/speexWorklet.js?url'
+import noiseGateWorkletPath from '@sapphi-red/web-noise-suppressor/noiseGateWorklet.js?url'
+import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorkletPath.js?url'
+import speexWasmPath from '@sapphi-red/web-noise-suppressor/speex.wasm?url'
+import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url'
+import rnnoiseWasmSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url'
 
 export class NoiseSuppressionManager {
   constructor() {
-    this.rnNoise = null
+    this.speexNode = null
+    this.rnnoiseNode = null
+    this.noiseGateNode = null
+    this.gainNode = null
     this.audioContext = null
     this.sourceNode = null
     this.destinationNode = null
     this.isEnabled = false
     this.stream = null
+    this.currentMode = null // 'speex', 'rnnoise', 'noisegate'
+    this.wasmBinaries = {
+      speex: null,
+      rnnoise: null
+    }
   }
 
   async initialize(stream) {
@@ -27,46 +47,93 @@ export class NoiseSuppressionManager {
         })
       }
 
-      // Create source node from the stream
+      // Load WASM binaries
+      const [speexWasmBinary, rnnoiseWasmBinary] = await Promise.all([
+        loadSpeex({ url: speexWasmPath }),
+        loadRnnoise({
+          url: rnnoiseWasmPath,
+          simdUrl: rnnoiseWasmSimdPath
+        })
+      ])
+      
+      this.wasmBinaries.speex = speexWasmBinary
+      this.wasmBinaries.rnnoise = rnnoiseWasmBinary
+
+      // Add worklet modules
+      await Promise.all([
+        this.audioContext.audioWorklet.addModule(speexWorkletPath),
+        this.audioContext.audioWorklet.addModule(noiseGateWorkletPath),
+        this.audioContext.audioWorklet.addModule(rnnoiseWorkletPath)
+      ])
+
+      // Create source and destination nodes
       this.sourceNode = this.audioContext.createMediaStreamSource(stream)
-
-      // Create destination node
       this.destinationNode = this.audioContext.createMediaStreamDestination()
+      this.gainNode = this.audioContext.createGain()
+      this.gainNode.gain.value = 1.0
 
-      // Initialize RNNoise with optimal parameters
-      this.rnNoise = await RnNoiseNode.create(this.audioContext, {
-        smoothing: 0.4,      // Баланс между быстротой реакции и стабильностью
-        minGain: 0.0015,     // Минимальное усиление для очень тихих звуков
-        maxGain: 1,          // Максимальное усиление
-        threshold: 0.15,     // Порог для определения речи
-        vadOffset: 0,        // Смещение для определения голосовой активности
-        vadMode: 3,          // Агрессивный режим определения речи
-        enableVAD: true      // Включаем определение голосовой активности
+      // Initialize all processors
+      this.speexNode = new SpeexWorkletNode(this.audioContext, {
+        wasmBinary: speexWasmBinary,
+        maxChannels: 1
       })
 
-      console.log('RNNoise initialized successfully')
+      this.rnnoiseNode = new RnnoiseWorkletNode(this.audioContext, {
+        wasmBinary: rnnoiseWasmBinary,
+        maxChannels: 1
+      })
+
+      this.noiseGateNode = new NoiseGateWorkletNode(this.audioContext, {
+        openThreshold: -50,
+        closeThreshold: -60,
+        holdMs: 90,
+        maxChannels: 1
+      })
+
+      console.log('Noise suppression initialized successfully')
       return true
     } catch (error) {
-      console.error('Failed to initialize RNNoise:', error)
+      console.error('Failed to initialize noise suppression:', error)
       this.cleanup()
       return false
     }
   }
 
-  async enable() {
-    if (!this.rnNoise || !this.sourceNode || !this.destinationNode) {
-      console.error('RNNoise not initialized')
+  async enable(mode = 'rnnoise') {
+    if (!this.sourceNode || !this.destinationNode) {
+      console.error('Noise suppression not initialized')
       return false
     }
 
     try {
+      // Disable current if enabled
       if (this.isEnabled) {
-        return true
+        await this.disable()
+      }
+
+      let processorNode = null
+      switch (mode) {
+        case 'speex':
+          processorNode = this.speexNode
+          break
+        case 'rnnoise':
+          processorNode = this.rnnoiseNode
+          break
+        case 'noisegate':
+          processorNode = this.noiseGateNode
+          break
+        default:
+          throw new Error(`Unknown mode: ${mode}`)
+      }
+
+      if (!processorNode) {
+        throw new Error(`Processor not initialized for mode: ${mode}`)
       }
 
       // Connect the audio nodes
-      this.sourceNode.connect(this.rnNoise)
-      this.rnNoise.connect(this.destinationNode)
+      this.sourceNode.connect(processorNode)
+      processorNode.connect(this.gainNode)
+      this.gainNode.connect(this.destinationNode)
 
       // Replace the audio track
       const originalTrack = this.stream.getAudioTracks()[0]
@@ -77,27 +144,37 @@ export class NoiseSuppressionManager {
         this.stream.addTrack(processedTrack)
       }
 
+      this.currentMode = mode
       this.isEnabled = true
-      console.log('RNNoise enabled')
+      console.log(`Noise suppression enabled with mode: ${mode}`)
       return true
     } catch (error) {
-      console.error('Failed to enable RNNoise:', error)
+      console.error('Failed to enable noise suppression:', error)
       return false
     }
   }
 
   async disable() {
-    if (!this.rnNoise || !this.isEnabled) {
+    if (!this.isEnabled) {
       return false
     }
 
     try {
-      // Disconnect the nodes
+      // Disconnect all nodes
       if (this.sourceNode) {
         this.sourceNode.disconnect()
       }
-      if (this.rnNoise) {
-        this.rnNoise.disconnect()
+      if (this.speexNode) {
+        this.speexNode.disconnect()
+      }
+      if (this.rnnoiseNode) {
+        this.rnnoiseNode.disconnect()
+      }
+      if (this.noiseGateNode) {
+        this.noiseGateNode.disconnect()
+      }
+      if (this.gainNode) {
+        this.gainNode.disconnect()
       }
 
       // Restore original track if available
@@ -107,10 +184,11 @@ export class NoiseSuppressionManager {
       }
 
       this.isEnabled = false
-      console.log('RNNoise disabled')
+      this.currentMode = null
+      console.log('Noise suppression disabled')
       return true
     } catch (error) {
-      console.error('Failed to disable RNNoise:', error)
+      console.error('Failed to disable noise suppression:', error)
       return false
     }
   }
@@ -119,8 +197,16 @@ export class NoiseSuppressionManager {
     try {
       this.disable()
       
-      if (this.rnNoise) {
-        this.rnNoise = null
+      if (this.speexNode) {
+        this.speexNode.destroy?.()
+        this.speexNode = null
+      }
+      if (this.rnnoiseNode) {
+        this.rnnoiseNode.destroy?.()
+        this.rnnoiseNode = null
+      }
+      if (this.noiseGateNode) {
+        this.noiseGateNode = null
       }
 
       if (this.audioContext) {
@@ -130,20 +216,30 @@ export class NoiseSuppressionManager {
 
       this.sourceNode = null
       this.destinationNode = null
+      this.gainNode = null
       this.stream = null
       this.isEnabled = false
+      this.currentMode = null
+      this.wasmBinaries = {
+        speex: null,
+        rnnoise: null
+      }
 
-      console.log('RNNoise cleaned up')
+      console.log('Noise suppression cleaned up')
     } catch (error) {
       console.error('Error during cleanup:', error)
     }
   }
 
   isInitialized() {
-    return this.rnNoise !== null
+    return this.sourceNode !== null && this.destinationNode !== null
   }
 
   getIsEnabled() {
     return this.isEnabled
+  }
+
+  getCurrentMode() {
+    return this.currentMode
   }
 } 

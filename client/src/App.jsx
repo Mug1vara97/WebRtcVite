@@ -16,6 +16,8 @@ import {
   Divider,
   Slider,
   Switch,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
   Mic,
@@ -33,7 +35,8 @@ import {
   VolumeUpRounded,
   Hearing,
   NoiseAware,
-  NoiseControlOff
+  NoiseControlOff,
+  ExpandMore
 } from '@mui/icons-material';
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
@@ -906,6 +909,8 @@ function App() {
   const [videoStream, setVideoStream] = useState(null);
   const [remoteVideos, setRemoteVideos] = useState(new Map());
   const [isNoiseSuppressed, setIsNoiseSuppressed] = useState(false);
+  const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
+  const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
 
 
@@ -2444,7 +2449,7 @@ function App() {
       let success = false;
 
       if (newState) {
-        success = await noiseSuppressionRef.current.enable();
+        success = await noiseSuppressionRef.current.enable(noiseSuppressionMode);
       } else {
         success = await noiseSuppressionRef.current.disable();
       }
@@ -2456,6 +2461,42 @@ function App() {
     } catch (error) {
       console.error('Error toggling noise suppression:', error);
     }
+  };
+
+  // Add noise suppression menu handlers
+  const handleNoiseSuppressionMenuOpen = (event) => {
+    setNoiseSuppressMenuAnchor(event.currentTarget);
+  };
+
+  const handleNoiseSuppressionMenuClose = () => {
+    setNoiseSuppressMenuAnchor(null);
+  };
+
+  const handleNoiseSuppressionModeSelect = async (mode) => {
+    try {
+      if (!noiseSuppressionRef.current || !localStreamRef.current) {
+        console.error('Noise suppression or stream not initialized');
+        return;
+      }
+
+      let success = false;
+
+      if (!isNoiseSuppressed) {
+        success = await noiseSuppressionRef.current.enable(mode);
+      } else if (mode !== noiseSuppressionMode) {
+        // Если меняем режим при включенном шумоподавлении
+        success = await noiseSuppressionRef.current.enable(mode);
+      }
+
+      if (success) {
+        setNoiseSuppressionMode(mode);
+        setIsNoiseSuppressed(true);
+        console.log('Noise suppression mode changed to:', mode);
+      }
+    } catch (error) {
+      console.error('Error changing noise suppression mode:', error);
+    }
+    handleNoiseSuppressionMenuClose();
   };
 
   if (!isJoined) {
@@ -2727,14 +2768,48 @@ function App() {
               >
                 {isVideoEnabled ? <VideocamOff /> : <Videocam />}
               </IconButton>
-              <IconButton
-                sx={styles.iconButton}
-                onClick={handleNoiseSuppressionToggle}
-                title={isNoiseSuppressed ? "Disable noise suppression" : "Enable noise suppression"}
-                disabled={!noiseSuppressionRef.current?.isInitialized()}
-              >
-                {isNoiseSuppressed ? <NoiseAware /> : <NoiseControlOff />}
-              </IconButton>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <IconButton
+                  sx={styles.iconButton}
+                  onClick={handleNoiseSuppressionToggle}
+                  title={isNoiseSuppressed ? "Disable noise suppression" : "Enable noise suppression"}
+                  disabled={!noiseSuppressionRef.current?.isInitialized()}
+                >
+                  {isNoiseSuppressed ? <NoiseAware /> : <NoiseControlOff />}
+                </IconButton>
+                <IconButton
+                  size="small"
+                  sx={styles.iconButton}
+                  onClick={handleNoiseSuppressionMenuOpen}
+                  disabled={!noiseSuppressionRef.current?.isInitialized()}
+                >
+                  <ExpandMore />
+                </IconButton>
+                <Menu
+                  anchorEl={noiseSuppressMenuAnchor}
+                  open={Boolean(noiseSuppressMenuAnchor)}
+                  onClose={handleNoiseSuppressionMenuClose}
+                >
+                  <MenuItem 
+                    onClick={() => handleNoiseSuppressionModeSelect('rnnoise')}
+                    selected={noiseSuppressionMode === 'rnnoise'}
+                  >
+                    RNNoise (AI-based)
+                  </MenuItem>
+                  <MenuItem 
+                    onClick={() => handleNoiseSuppressionModeSelect('speex')}
+                    selected={noiseSuppressionMode === 'speex'}
+                  >
+                    Speex (Classic)
+                  </MenuItem>
+                  <MenuItem 
+                    onClick={() => handleNoiseSuppressionModeSelect('noisegate')}
+                    selected={noiseSuppressionMode === 'noisegate'}
+                  >
+                    Noise Gate
+                  </MenuItem>
+                </Menu>
+              </Box>
             </Box>
             <Box sx={styles.controlGroup}>
               <IconButton
