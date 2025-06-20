@@ -1849,6 +1849,11 @@ function App() {
       console.log('Audio producer created:', producer.id);
       producersRef.current.set(producer.id, producer);
 
+      // Set producer in noise suppression manager
+      if (noiseSuppressionRef.current) {
+        noiseSuppressionRef.current.setProducer(producer);
+      }
+
       // Monitor producer state
       producer.on('transportclose', () => {
         console.log('Producer transport closed');

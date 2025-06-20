@@ -26,6 +26,11 @@ export class NoiseSuppressionManager {
       rnnoise: null
     };
     this.originalTrack = null;
+    this.producer = null;
+  }
+
+  setProducer(producer) {
+    this.producer = producer;
   }
 
   async initialize(stream) {
@@ -41,7 +46,6 @@ export class NoiseSuppressionManager {
       }
 
       this.stream = stream;
-      // Store original track reference
       this.originalTrack = stream.getAudioTracks()[0];
       
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
@@ -50,7 +54,6 @@ export class NoiseSuppressionManager {
       });
 
       console.log('Loading WASM binaries...');
-      // Load WASM binaries
       const [speexWasmBinary, rnnoiseWasmBinary] = await Promise.all([
         loadSpeex({ url: speexWasmPath }),
         loadRnnoise({
@@ -63,7 +66,6 @@ export class NoiseSuppressionManager {
       this.wasmBinaries.rnnoise = rnnoiseWasmBinary;
 
       console.log('Loading worklet modules...');
-      // Add worklet modules
       await Promise.all([
         this.audioContext.audioWorklet.addModule(speexWorkletPath),
         this.audioContext.audioWorklet.addModule(noiseGateWorkletPath),
@@ -96,6 +98,11 @@ export class NoiseSuppressionManager {
         return false;
       }
 
+      if (!this.producer) {
+        console.error('No producer available');
+        return false;
+      }
+
       console.log('Enabling noise suppression with mode:', mode);
       console.log('Current audio track state:', {
         tracks: this.stream.getAudioTracks().length,
@@ -103,14 +110,14 @@ export class NoiseSuppressionManager {
         readyState: this.stream.getAudioTracks()[0]?.readyState
       });
 
-      // Create new noise node first, before disconnecting anything
+      // Create new noise node first
       let newNoiseNode;
       switch (mode) {
         case 'rnnoise': {
           console.log('Creating RNNoise node...');
           newNoiseNode = new RnnoiseWorkletNode(this.audioContext, {
             wasmBinary: this.wasmBinaries.rnnoise,
-            maxChannels: 1
+            maxChannels: 2
           });
           break;
         }
@@ -118,7 +125,7 @@ export class NoiseSuppressionManager {
           console.log('Creating Speex node...');
           newNoiseNode = new SpeexWorkletNode(this.audioContext, {
             wasmBinary: this.wasmBinaries.speex,
-            maxChannels: 1
+            maxChannels: 2
           });
           break;
         }
@@ -128,7 +135,7 @@ export class NoiseSuppressionManager {
             openThreshold: -50,
             closeThreshold: -60,
             holdMs: 90,
-            maxChannels: 1
+            maxChannels: 2
           });
           break;
         }
@@ -174,36 +181,20 @@ export class NoiseSuppressionManager {
       this.noiseNode = newNoiseNode;
       this.destinationNode = newDestination;
 
-      // Replace the track in the stream
-      console.log('Replacing audio track...');
-      const oldTrack = this.stream.getAudioTracks()[0];
-      if (oldTrack) {
-        console.log('Removing old track:', {
-          id: oldTrack.id,
-          enabled: oldTrack.enabled,
-          readyState: oldTrack.readyState
-        });
-        oldTrack.enabled = false;
-        this.stream.removeTrack(oldTrack);
-        if (oldTrack !== this.originalTrack) {
-          oldTrack.stop();
-        }
-      }
-
-      this.stream.addTrack(processedTrack);
-      processedTrack.enabled = true;
+      // Replace the track in the producer
+      console.log('Replacing producer track...');
+      await this.producer.replaceTrack({ track: processedTrack });
 
       console.log('Final audio track state:', {
         tracks: this.stream.getAudioTracks().length,
-        enabled: this.stream.getAudioTracks()[0]?.enabled,
-        readyState: this.stream.getAudioTracks()[0]?.readyState
+        enabled: processedTrack.enabled,
+        readyState: processedTrack.readyState
       });
 
       console.log(`Noise suppression enabled with mode: ${mode}`);
       return true;
     } catch (error) {
       console.error('Error enabling noise suppression:', error);
-      // On error, try to restore original audio
       console.log('Attempting to restore original audio...');
       await this.disable();
       return false;
@@ -212,79 +203,35 @@ export class NoiseSuppressionManager {
 
   async disable() {
     try {
-      console.log('Disabling noise suppression...');
-      console.log('Current audio track state:', {
-        tracks: this.stream.getAudioTracks().length,
-        enabled: this.stream.getAudioTracks()[0]?.enabled,
-        readyState: this.stream.getAudioTracks()[0]?.readyState
-      });
-
-      // Create a new destination node
-      const newDestination = this.audioContext.createMediaStreamDestination();
-
-      // Connect source directly to destination first
-      console.log('Setting up direct audio chain...');
-      this.sourceNode.connect(this.gainNode);
-      this.gainNode.connect(newDestination);
-
-      // Get the direct track
-      const directTrack = newDestination.stream.getAudioTracks()[0];
-
-      if (!directTrack) {
-        throw new Error('Failed to get direct audio track');
+      if (!this.producer) {
+        console.error('No producer available');
+        return false;
       }
 
-      console.log('New direct track created:', {
-        id: directTrack.id,
-        enabled: directTrack.enabled,
-        readyState: directTrack.readyState
-      });
+      console.log('Disabling noise suppression...');
 
-      // Now disconnect the old chain
-      console.log('Disconnecting old audio chain...');
-      this.sourceNode.disconnect();
+      // Disconnect all nodes
+      if (this.sourceNode) {
+        this.sourceNode.disconnect();
+      }
+      
       if (this.noiseNode) {
         this.noiseNode.disconnect();
         this.noiseNode.destroy?.();
         this.noiseNode = null;
       }
-      this.gainNode.disconnect();
-      if (this.destinationNode) {
-        this.destinationNode.disconnect();
+
+      if (this.gainNode) {
+        this.gainNode.disconnect();
       }
 
-      // Update destination reference
-      this.destinationNode = newDestination;
+      // Connect source directly to destination
+      this.sourceNode.connect(this.gainNode);
+      this.gainNode.connect(this.destinationNode);
 
-      // Replace track in the stream
-      console.log('Replacing with original track...');
-      const currentTrack = this.stream.getAudioTracks()[0];
-      if (currentTrack) {
-        console.log('Removing current track:', {
-          id: currentTrack.id,
-          enabled: currentTrack.enabled,
-          readyState: currentTrack.readyState
-        });
-        currentTrack.enabled = false;
-        this.stream.removeTrack(currentTrack);
-        if (currentTrack !== this.originalTrack) {
-          currentTrack.stop();
-        }
-      }
-
-      // Use the original track if available, otherwise use the direct track
-      const trackToAdd = this.originalTrack || directTrack;
-      if (!this.stream.getAudioTracks().includes(trackToAdd)) {
-        this.stream.addTrack(trackToAdd);
-      }
-      trackToAdd.enabled = true;
-
-      console.log('Final audio track state:', {
-        tracks: this.stream.getAudioTracks().length,
-        enabled: this.stream.getAudioTracks()[0]?.enabled,
-        readyState: this.stream.getAudioTracks()[0]?.readyState,
-        usingOriginal: trackToAdd === this.originalTrack
-      });
+      // Replace with original track in the producer
+      console.log('Restoring original track to producer...');
+      await this.producer.replaceTrack({ track: this.originalTrack });
 
       console.log('Noise suppression disabled');
       return true;
@@ -315,6 +262,7 @@ export class NoiseSuppressionManager {
     this.stream = null;
     this.sourceNode = null;
     this.originalTrack = null;
+    this.producer = null;
     this.wasmBinaries = {
       speex: null,
       rnnoise: null
