@@ -25,6 +25,7 @@ export class NoiseSuppressionManager {
       speex: null,
       rnnoise: null
     };
+    this.originalTrack = null;
   }
 
   async initialize(stream) {
@@ -40,6 +41,9 @@ export class NoiseSuppressionManager {
       }
 
       this.stream = stream;
+      // Store original track reference
+      this.originalTrack = stream.getAudioTracks()[0];
+      
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 48000,
         latencyHint: 'interactive'
@@ -72,6 +76,10 @@ export class NoiseSuppressionManager {
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = 1.0;
 
+      // Connect source directly to destination initially
+      this.sourceNode.connect(this.gainNode);
+      this.gainNode.connect(this.destinationNode);
+
       console.log('Noise suppression initialized');
       this.initialized = true;
       return true;
@@ -88,9 +96,16 @@ export class NoiseSuppressionManager {
         return false;
       }
 
-      // Cleanup previous node if exists
-      await this.disable();
+      // Disconnect all nodes first
+      this.sourceNode.disconnect();
+      if (this.noiseNode) {
+        this.noiseNode.disconnect();
+        this.noiseNode.destroy?.();
+        this.noiseNode = null;
+      }
+      this.gainNode.disconnect();
 
+      // Create new noise node based on mode
       switch (mode) {
         case 'rnnoise': {
           this.noiseNode = new RnnoiseWorkletNode(this.audioContext, {
@@ -119,45 +134,47 @@ export class NoiseSuppressionManager {
           throw new Error(`Unsupported noise suppression mode: ${mode}`);
       }
 
-      // Connect nodes
-      this.sourceNode.disconnect();
+      // Connect nodes with noise suppression
       this.sourceNode.connect(this.noiseNode);
       this.noiseNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
 
-      // Replace audio track
-      const oldTrack = this.stream.getAudioTracks()[0];
-      const newTrack = this.destinationNode.stream.getAudioTracks()[0];
+      // Get the processed track
+      const processedTrack = this.destinationNode.stream.getAudioTracks()[0];
       
-      if (oldTrack && newTrack) {
-        oldTrack.enabled = false;
-        this.stream.removeTrack(oldTrack);
-        this.stream.addTrack(newTrack);
-        oldTrack.stop();
+      // Replace the track in the stream
+      if (processedTrack) {
+        const oldTrack = this.stream.getAudioTracks()[0];
+        if (oldTrack) {
+          oldTrack.enabled = false;
+          this.stream.removeTrack(oldTrack);
+          if (oldTrack !== this.originalTrack) {
+            oldTrack.stop();
+          }
+        }
+        this.stream.addTrack(processedTrack);
       }
 
       console.log(`Noise suppression enabled with mode: ${mode}`);
       return true;
     } catch (error) {
       console.error('Error enabling noise suppression:', error);
+      // On error, try to restore original audio
+      await this.disable();
       return false;
     }
   }
 
   async disable() {
     try {
-      if (!this.noiseNode) {
-        return true;
-      }
-
-      // Disconnect and cleanup nodes
+      // Disconnect all nodes
       if (this.sourceNode) {
         this.sourceNode.disconnect();
       }
       
       if (this.noiseNode) {
-        this.noiseNode.destroy?.();
         this.noiseNode.disconnect();
+        this.noiseNode.destroy?.();
         this.noiseNode = null;
       }
 
@@ -165,12 +182,22 @@ export class NoiseSuppressionManager {
         this.gainNode.disconnect();
       }
 
-      // Restore original audio track
-      if (this.stream && this.destinationNode) {
-        const oldTrack = this.stream.getAudioTracks()[0];
-        if (oldTrack) {
-          oldTrack.enabled = true;
+      // Connect source directly to destination
+      this.sourceNode.connect(this.gainNode);
+      this.gainNode.connect(this.destinationNode);
+
+      // Restore original track
+      if (this.stream && this.originalTrack) {
+        const currentTrack = this.stream.getAudioTracks()[0];
+        if (currentTrack && currentTrack !== this.originalTrack) {
+          currentTrack.enabled = false;
+          this.stream.removeTrack(currentTrack);
+          currentTrack.stop();
         }
+        if (!this.stream.getAudioTracks().includes(this.originalTrack)) {
+          this.stream.addTrack(this.originalTrack);
+        }
+        this.originalTrack.enabled = true;
       }
 
       console.log('Noise suppression disabled');
@@ -201,6 +228,7 @@ export class NoiseSuppressionManager {
 
     this.stream = null;
     this.sourceNode = null;
+    this.originalTrack = null;
     this.wasmBinaries = {
       speex: null,
       rnnoise: null
