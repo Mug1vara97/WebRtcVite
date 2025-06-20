@@ -3,14 +3,28 @@ FROM node:20-alpine as build
 
 WORKDIR /app
 
+# Add a non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Set npm cache directory and fix permissions
+RUN mkdir -p /home/appuser/.npm && \
+    chown -R appuser:appgroup /home/appuser/.npm
+
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Set ownership of the workdir
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Install dependencies with legacy peer deps and clean npm cache
+RUN npm cache clean --force && \
+    npm install --legacy-peer-deps
 
 # Copy source code
-COPY . .
+COPY --chown=appuser:appgroup . .
 
 # Build the app
 RUN npm run build
