@@ -41,7 +41,6 @@ import {
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
 import { NoiseSuppressionManager } from './utils/noiseSuppression';
-import { EchoCancellationManager } from './utils/echoCancellation';
 
 
 const config = {
@@ -913,8 +912,6 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
-  const [isEchoCancelled, setIsEchoCancelled] = useState(false);
-  const echoCancellationRef = useRef(null);
 
 
   const socketRef = useRef();
@@ -1091,7 +1088,7 @@ function App() {
     };
   }, [socketRef.current]); // Зависим только от socketRef.current
 
-  const cleanup = async () => {
+  const cleanup = () => {
     try {
       // Stop screen sharing if active
       if (screenProducer) {
@@ -1174,12 +1171,6 @@ function App() {
       if (noiseSuppressionRef.current) {
         noiseSuppressionRef.current.cleanup();
         noiseSuppressionRef.current = null;
-      }
-      
-      // Cleanup echo cancellation
-      if (echoCancellationRef.current) {
-        echoCancellationRef.current.cleanup();
-        echoCancellationRef.current = null;
       }
 
     } catch (error) {
@@ -1797,42 +1788,15 @@ function App() {
         noiseSuppressionRef.current = new NoiseSuppressionManager();
       }
       
-      // Initialize echo cancellation
-      if (!echoCancellationRef.current) {
-        echoCancellationRef.current = new EchoCancellationManager();
-      }
-
-      // Initialize both audio processors
-      const [noiseInitResult, echoInitResult] = await Promise.all([
-        noiseSuppressionRef.current.initialize(stream),
-        echoCancellationRef.current.initialize(stream)
-      ]);
-
-      // Enable processors if needed
-      if (noiseInitResult && isNoiseSuppressed) {
+      const initResult = await noiseSuppressionRef.current.initialize(stream);
+      if (initResult && isNoiseSuppressed) {
         await noiseSuppressionRef.current.enable(noiseSuppressionMode);
       }
 
-      if (echoInitResult && isEchoCancelled) {
-        await echoCancellationRef.current.enable();
-      }
-
-      // Get the final processed stream
-      let processedStream;
-      if (isNoiseSuppressed && isEchoCancelled) {
-        // If both are enabled, chain them together
-        const noiseProcessedStream = noiseSuppressionRef.current.getProcessedStream();
-        await echoCancellationRef.current.initialize(noiseProcessedStream);
-        processedStream = echoCancellationRef.current.getProcessedStream();
-      } else if (isNoiseSuppressed) {
-        processedStream = noiseSuppressionRef.current.getProcessedStream();
-      } else if (isEchoCancelled) {
-        processedStream = echoCancellationRef.current.getProcessedStream();
-      } else {
-        processedStream = stream;
-      }
-
+      // Get the processed stream for the producer
+      const processedStream = noiseSuppressionRef.current.getProcessedStream();
       const track = processedStream.getAudioTracks()[0];
+      
       if (!track) {
         throw new Error('No audio track in processed stream');
       }
@@ -1876,12 +1840,9 @@ function App() {
       console.log('Audio producer created:', producer.id);
       producersRef.current.set(producer.id, producer);
 
-      // Set producer in both managers
+      // Set producer in noise suppression manager
       if (noiseSuppressionRef.current) {
         noiseSuppressionRef.current.setProducer(producer);
-      }
-      if (echoCancellationRef.current) {
-        echoCancellationRef.current.setProducer(producer);
       }
 
       // Monitor producer state
@@ -2669,32 +2630,6 @@ function App() {
     }
   };
 
-  // Add echo cancellation toggle handler
-  const handleEchoCancellationToggle = async () => {
-    try {
-      if (!echoCancellationRef.current || !localStreamRef.current) {
-        console.error('Echo cancellation or stream not initialized');
-        return;
-      }
-
-      if (!isEchoCancelled) {
-        const success = await echoCancellationRef.current.enable();
-        if (success) {
-          setIsEchoCancelled(true);
-          console.log('Echo cancellation enabled');
-        }
-      } else {
-        const success = await echoCancellationRef.current.disable();
-        if (success) {
-          setIsEchoCancelled(false);
-          console.log('Echo cancellation disabled');
-        }
-      }
-    } catch (error) {
-      console.error('Error toggling echo cancellation:', error);
-    }
-  };
-
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -3006,14 +2941,6 @@ function App() {
                   </MenuItem>
                 </Menu>
               </Box>
-              <IconButton
-                sx={styles.iconButton}
-                onClick={handleEchoCancellationToggle}
-                title={isEchoCancelled ? "Disable echo cancellation" : "Enable echo cancellation"}
-                disabled={!echoCancellationRef.current?.isInitialized()}
-              >
-                {isEchoCancelled ? <VolumeOff /> : <VolumeUp />}
-              </IconButton>
             </Box>
             <Box sx={styles.controlGroup}>
               <IconButton
