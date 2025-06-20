@@ -128,19 +128,19 @@ module.exports = {
                     username: 'test',
                     credential: 'test123',
                     preferTcp: true
-                },
-                {
-                    urls: ['turn:global.turn.twilio.com:3478?transport=udp'],
-                    username: 'test',
-                    credential: 'test123',
-                    preferUdp: true
-                },
-                {
-                    urls: ['turn:global.turn.twilio.com:3478?transport=tcp'],
-                    username: 'test',
-                    credential: 'test123',
-                    preferTcp: true
                 }
+                // {
+                //     urls: ['turn:global.turn.twilio.com:3478?transport=udp'],
+                //     username: 'test',
+                //     credential: 'test123',
+                //     preferUdp: true
+                // },
+                // {
+                //     urls: ['turn:global.turn.twilio.com:3478?transport=tcp'],
+                //     username: 'test',
+                //     credential: 'test123',
+                //     preferTcp: true
+                // }
             ]
         }
     },
@@ -148,9 +148,9 @@ module.exports = {
         enabled: true,
         urls: [
             'turn:185.119.59.23:3478',
-            'turn:185.119.59.23:3478?transport=tcp',
-            'turn:global.turn.twilio.com:3478?transport=udp',
-            'turn:global.turn.twilio.com:3478?transport=tcp'
+            'turn:185.119.59.23:3478?transport=tcp'
+            // 'turn:global.turn.twilio.com:3478?transport=udp',
+            // 'turn:global.turn.twilio.com:3478?transport=tcp'
         ],
         username: 'test',
         credential: 'test123'
