@@ -1,18 +1,16 @@
 import {
-  RNNoiseNode,
+  loadSpeex,
   SpeexWorkletNode,
+  loadRnnoise,
+  RnnoiseWorkletNode,
   NoiseGateWorkletNode
-} from '@sapphi-red/web-noise-suppressor'
-
-// Пути к воркерам
-const RNNOISE_WORKLET_PATH = '/worklets/rnnoise-processor.js'
-const SPEEX_WORKLET_PATH = '/worklets/speex-processor.js'
-const NOISEGATE_WORKLET_PATH = '/worklets/noisegate-processor.js'
-
-// Пути к WASM файлам
-const RNNOISE_WASM_PATH = '/wasm/rnnoise.wasm'
-const RNNOISE_SIMD_WASM_PATH = '/wasm/rnnoise-simd.wasm'
-const SPEEX_WASM_PATH = '/wasm/speex.wasm'
+} from '@sapphi-red/web-noise-suppressor';
+import speexWorkletPath from '@sapphi-red/web-noise-suppressor/speexWorklet.js?url';
+import noiseGateWorkletPath from '@sapphi-red/web-noise-suppressor/noiseGateWorklet.js?url';
+import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
+import speexWasmPath from '@sapphi-red/web-noise-suppressor/speex.wasm?url';
+import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
+import rnnoiseWasmSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 
 export class NoiseSuppressionManager {
   constructor() {
@@ -20,8 +18,13 @@ export class NoiseSuppressionManager {
     this.stream = null;
     this.sourceNode = null;
     this.noiseNode = null;
+    this.gainNode = null;
     this.destinationNode = null;
     this.initialized = false;
+    this.wasmBinaries = {
+      speex: null,
+      rnnoise: null
+    };
   }
 
   async initialize(stream) {
@@ -42,9 +45,33 @@ export class NoiseSuppressionManager {
         latencyHint: 'interactive'
       });
 
-      // Create source node
+      console.log('Loading WASM binaries...');
+      // Load WASM binaries
+      const [speexWasmBinary, rnnoiseWasmBinary] = await Promise.all([
+        loadSpeex({ url: speexWasmPath }),
+        loadRnnoise({
+          url: rnnoiseWasmPath,
+          simdUrl: rnnoiseWasmSimdPath
+        })
+      ]);
+
+      this.wasmBinaries.speex = speexWasmBinary;
+      this.wasmBinaries.rnnoise = rnnoiseWasmBinary;
+
+      console.log('Loading worklet modules...');
+      // Add worklet modules
+      await Promise.all([
+        this.audioContext.audioWorklet.addModule(speexWorkletPath),
+        this.audioContext.audioWorklet.addModule(noiseGateWorkletPath),
+        this.audioContext.audioWorklet.addModule(rnnoiseWorkletPath)
+      ]);
+
+      // Create nodes
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
-      
+      this.destinationNode = this.audioContext.createMediaStreamDestination();
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = 1.0;
+
       console.log('Noise suppression initialized');
       this.initialized = true;
       return true;
@@ -62,35 +89,29 @@ export class NoiseSuppressionManager {
       }
 
       // Cleanup previous node if exists
-      await this.cleanup();
-
-      // Create destination node if not exists
-      if (!this.destinationNode) {
-        this.destinationNode = this.audioContext.createMediaStreamDestination();
-      }
+      await this.disable();
 
       switch (mode) {
         case 'rnnoise': {
-          this.noiseNode = new RNNoiseNode(this.audioContext, {
-            wasmUrl: RNNOISE_WASM_PATH,
-            simdWasmUrl: RNNOISE_SIMD_WASM_PATH,
-            workletUrl: RNNOISE_WORKLET_PATH
+          this.noiseNode = new RnnoiseWorkletNode(this.audioContext, {
+            wasmBinary: this.wasmBinaries.rnnoise,
+            maxChannels: 1
           });
           break;
         }
         case 'speex': {
           this.noiseNode = new SpeexWorkletNode(this.audioContext, {
-            wasmUrl: SPEEX_WASM_PATH,
-            workletUrl: SPEEX_WORKLET_PATH
+            wasmBinary: this.wasmBinaries.speex,
+            maxChannels: 1
           });
           break;
         }
         case 'noisegate': {
           this.noiseNode = new NoiseGateWorkletNode(this.audioContext, {
-            workletUrl: NOISEGATE_WORKLET_PATH,
-            threshold: -30,
-            attackTime: 0.02,
-            releaseTime: 0.1
+            openThreshold: -50,
+            closeThreshold: -60,
+            holdMs: 90,
+            maxChannels: 1
           });
           break;
         }
@@ -101,7 +122,8 @@ export class NoiseSuppressionManager {
       // Connect nodes
       this.sourceNode.disconnect();
       this.sourceNode.connect(this.noiseNode);
-      this.noiseNode.connect(this.destinationNode);
+      this.noiseNode.connect(this.gainNode);
+      this.gainNode.connect(this.destinationNode);
 
       // Replace audio track
       const oldTrack = this.stream.getAudioTracks()[0];
@@ -134,8 +156,13 @@ export class NoiseSuppressionManager {
       }
       
       if (this.noiseNode) {
+        this.noiseNode.destroy?.();
         this.noiseNode.disconnect();
         this.noiseNode = null;
+      }
+
+      if (this.gainNode) {
+        this.gainNode.disconnect();
       }
 
       // Restore original audio track
@@ -162,6 +189,11 @@ export class NoiseSuppressionManager {
       this.destinationNode = null;
     }
 
+    if (this.gainNode) {
+      this.gainNode.disconnect();
+      this.gainNode = null;
+    }
+
     if (this.audioContext) {
       await this.audioContext.close();
       this.audioContext = null;
@@ -169,6 +201,10 @@ export class NoiseSuppressionManager {
 
     this.stream = null;
     this.sourceNode = null;
+    this.wasmBinaries = {
+      speex: null,
+      rnnoise: null
+    };
     this.initialized = false;
   }
 
