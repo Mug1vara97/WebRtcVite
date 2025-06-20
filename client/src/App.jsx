@@ -76,7 +76,7 @@ const config = {
     noiseSuppression: true,
     autoGainControl: true,
     sampleRate: 48000,
-    channelCount: 1,
+    channelCount: 2,
     volume: 1.0,
     latency: 0,
     suppressLocalAudioPlayback: true,
@@ -1785,7 +1785,7 @@ function App() {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 1,
+          channelCount: 2,
           sampleRate: 48000
         }
       });
@@ -1836,7 +1836,7 @@ function App() {
       const producer = await producerTransportRef.current.produce({ 
         track,
         codecOptions: {
-          opusStereo: false,
+          opusStereo: true,
           opusDtx: true,
           opusFec: true,
           opusNack: true

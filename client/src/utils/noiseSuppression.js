@@ -1,32 +1,22 @@
 import {
-  loadSpeex,
-  SpeexWorkletNode,
-  loadRnnoise,
   RnnoiseWorkletNode,
+  SpeexWorkletNode,
   NoiseGateWorkletNode
 } from '@sapphi-red/web-noise-suppressor';
-import speexWorkletPath from '@sapphi-red/web-noise-suppressor/speexWorklet.js?url';
-import noiseGateWorkletPath from '@sapphi-red/web-noise-suppressor/noiseGateWorklet.js?url';
-import rnnoiseWorkletPath from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
-import speexWasmPath from '@sapphi-red/web-noise-suppressor/speex.wasm?url';
-import rnnoiseWasmPath from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
-import rnnoiseWasmSimdPath from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 
 export class NoiseSuppressionManager {
   constructor() {
     this.audioContext = null;
-    this.stream = null;
     this.sourceNode = null;
-    this.noiseNode = null;
-    this.gainNode = null;
     this.destinationNode = null;
-    this.initialized = false;
-    this.wasmBinaries = {
-      speex: null,
-      rnnoise: null
-    };
-    this.originalTrack = null;
+    this.gainNode = null;
+    this.rnnWorkletNode = null;
+    this.speexWorkletNode = null;
+    this.noiseGateNode = null;
+    this.currentMode = null;
     this.producer = null;
+    this.originalTrack = null;
+    this.isInitialized = false;
   }
 
   setProducer(producer) {
@@ -35,65 +25,81 @@ export class NoiseSuppressionManager {
 
   async initialize(stream) {
     try {
-      if (this.initialized) {
-        console.log('Already initialized');
-        return true;
-      }
-
       if (!stream) {
         console.error('No stream provided');
         return false;
       }
 
-      this.stream = stream;
-      this.originalTrack = stream.getAudioTracks()[0];
-      
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 48000,
         latencyHint: 'interactive'
       });
 
-      console.log('Loading WASM binaries...');
-      const [speexWasmBinary, rnnoiseWasmBinary] = await Promise.all([
-        loadSpeex({ url: speexWasmPath }),
-        loadRnnoise({
-          url: rnnoiseWasmPath,
-          simdUrl: rnnoiseWasmSimdPath
-        })
-      ]);
-
-      this.wasmBinaries.speex = speexWasmBinary;
-      this.wasmBinaries.rnnoise = rnnoiseWasmBinary;
-
-      console.log('Loading worklet modules...');
-      await Promise.all([
-        this.audioContext.audioWorklet.addModule(speexWorkletPath),
-        this.audioContext.audioWorklet.addModule(noiseGateWorkletPath),
-        this.audioContext.audioWorklet.addModule(rnnoiseWorkletPath)
-      ]);
-
-      // Create nodes
+      // Create source from input stream
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
+
+      // Store original track for later use
+      this.originalTrack = stream.getAudioTracks()[0].clone();
+
+      // Create destination node
       this.destinationNode = this.audioContext.createMediaStreamDestination();
+      this.destinationNode.channelCount = 2;
+      this.destinationNode.channelCountMode = 'explicit';
+      this.destinationNode.channelInterpretation = 'speakers';
+
+      // Initialize worklet processors
+      await Promise.all([
+        this.audioContext.audioWorklet.addModule('/worklets/rnnoise-processor.js'),
+        this.audioContext.audioWorklet.addModule('/worklets/speex-processor.js'),
+        this.audioContext.audioWorklet.addModule('/worklets/noisegate-processor.js')
+      ]);
+
+      // Create worklet nodes with stereo support
+      this.rnnWorkletNode = new AudioWorkletNode(this.audioContext, 'rnnoise-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: {
+          maxChannels: 2
+        }
+      });
+
+      this.speexWorkletNode = new AudioWorkletNode(this.audioContext, 'speex-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: {
+          maxChannels: 2
+        }
+      });
+
+      this.noiseGateNode = new AudioWorkletNode(this.audioContext, 'noisegate-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: {
+          maxChannels: 2,
+          threshold: -50,
+          attack: 0.02,
+          release: 0.1
+        }
+      });
+
+      // Create gain node
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = 1.0;
 
-      // Connect source directly to destination initially
-      this.sourceNode.connect(this.gainNode);
-      this.gainNode.connect(this.destinationNode);
-
-      console.log('Noise suppression initialized');
-      this.initialized = true;
+      this.isInitialized = true;
       return true;
     } catch (error) {
-      console.error('Error initializing noise suppression:', error);
+      console.error('Failed to initialize noise suppression:', error);
       return false;
     }
   }
 
   async enable(mode = 'rnnoise') {
     try {
-      if (!this.audioContext || !this.stream || !this.initialized) {
+      if (!this.audioContext || !this.stream || !this.isInitialized) {
         console.error('Not initialized');
         return false;
       }
@@ -177,9 +183,15 @@ export class NoiseSuppressionManager {
         this.destinationNode.disconnect();
       }
 
+      // Stop current processed track if exists
+      if (this.currentProcessedTrack) {
+        this.currentProcessedTrack.stop();
+      }
+
       // Update references
       this.noiseNode = newNoiseNode;
       this.destinationNode = newDestination;
+      this.currentProcessedTrack = processedTrack;
 
       // Replace the track in the producer
       console.log('Replacing producer track...');
@@ -229,9 +241,18 @@ export class NoiseSuppressionManager {
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
 
-      // Replace with original track in the producer
+      // Stop current processed track if exists
+      if (this.currentProcessedTrack) {
+        this.currentProcessedTrack.stop();
+        this.currentProcessedTrack = null;
+      }
+
+      // Create a new track from the original
+      const newTrack = this.originalTrack.clone();
+
+      // Replace with new track in the producer
       console.log('Restoring original track to producer...');
-      await this.producer.replaceTrack({ track: this.originalTrack });
+      await this.producer.replaceTrack({ track: newTrack });
 
       console.log('Noise suppression disabled');
       return true;
@@ -259,18 +280,27 @@ export class NoiseSuppressionManager {
       this.audioContext = null;
     }
 
+    if (this.originalTrack) {
+      this.originalTrack.stop();
+      this.originalTrack = null;
+    }
+
+    if (this.currentProcessedTrack) {
+      this.currentProcessedTrack.stop();
+      this.currentProcessedTrack = null;
+    }
+
     this.stream = null;
     this.sourceNode = null;
-    this.originalTrack = null;
     this.producer = null;
     this.wasmBinaries = {
       speex: null,
       rnnoise: null
     };
-    this.initialized = false;
+    this.isInitialized = false;
   }
 
   isInitialized() {
-    return this.initialized;
+    return this.isInitialized;
   }
 } 
