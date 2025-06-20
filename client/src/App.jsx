@@ -945,7 +945,6 @@ function App() {
       document.removeEventListener('touchstart', handleInteraction);
     };
 
-    // Add socket event listeners
     if (socketRef.current) {
       socketRef.current.on('speakingStateChanged', ({ peerId, speaking }) => {
         setSpeakingStates(prev => {
@@ -956,14 +955,12 @@ function App() {
       });
 
       socketRef.current.on('peerMuteStateChanged', ({ peerId, isMuted }) => {
-        // Update volumes map to reflect mute state
         setVolumes(prev => {
           const newVolumes = new Map(prev);
           newVolumes.set(peerId, isMuted ? 0 : 100);
           return newVolumes;
         });
         
-        // If peer is muted, ensure they're not shown as speaking
         if (isMuted) {
           setSpeakingStates(prev => {
             const newStates = new Map(prev);
@@ -978,15 +975,8 @@ function App() {
     document.addEventListener('touchstart', handleInteraction);
 
     return () => {
-      cleanup();
       document.removeEventListener('click', handleInteraction);
       document.removeEventListener('touchstart', handleInteraction);
-      
-      // Remove socket event listeners
-      if (socketRef.current) {
-        socketRef.current.off('speakingStateChanged');
-        socketRef.current.off('peerMuteStateChanged');
-      }
     };
   }, []);
 
@@ -1535,7 +1525,7 @@ function App() {
   };
 
   // Получаем контекст мьюта на уровне компонента
-  const { muteStates, setMuteState } = useContext(MuteContext);
+  const { setMuteState } = useContext(MuteContext);
 
   // Обновляем handleMute
   const handleMute = useCallback(() => {
@@ -1550,12 +1540,10 @@ function App() {
         if (socketRef.current) {
           socketRef.current.emit('muteState', { isMuted: newMuteState });
           
-          // Обновляем локальное состояние в MuteContext
           if (setMuteState) {
             setMuteState(socketRef.current.id, newMuteState);
           }
           
-          // Если замьючены, сразу отправляем состояние speaking: false
           if (newMuteState) {
             socketRef.current.emit('speaking', { speaking: false });
             setSpeakingStates(prev => {
@@ -1802,12 +1790,15 @@ function App() {
       
       const initResult = await noiseSuppressionRef.current.initialize(stream);
       if (initResult && isNoiseSuppressed) {
-        await noiseSuppressionRef.current.enable();
+        await noiseSuppressionRef.current.enable(noiseSuppressionMode);
       }
+
+      // Get the processed stream for the producer
+      const processedStream = noiseSuppressionRef.current.getProcessedStream();
+      const track = processedStream.getAudioTracks()[0];
       
-      const track = stream.getAudioTracks()[0];
       if (!track) {
-        throw new Error('No audio track in stream');
+        throw new Error('No audio track in processed stream');
       }
       
       // Ensure track settings are applied
@@ -1822,7 +1813,7 @@ function App() {
       }
 
       // Add analyzer for voice activity detection
-      const source = audioContextRef.current.createMediaStreamSource(stream);
+      const source = audioContextRef.current.createMediaStreamSource(processedStream);
       const analyser = createAudioAnalyser(audioContextRef.current);
       source.connect(analyser);
 
@@ -1842,7 +1833,7 @@ function App() {
           opusNack: true
         },
         appData: {
-          streamId: stream.id
+          streamId: processedStream.id
         }
       });
       
@@ -2502,6 +2493,141 @@ function App() {
       console.error('Error changing noise suppression mode:', error);
     }
     handleNoiseSuppressionMenuClose();
+  };
+
+  const handleConsume = async (producer) => {
+    try {
+      console.log('Handling producer:', producer);
+      
+      if (producer.producerSocketId === socketRef.current.id) {
+        console.log('Skipping own producer');
+        return;
+      }
+      
+      const transport = await createConsumerTransport();
+      console.log('Consumer transport created:', transport.id);
+      
+      const { rtpCapabilities } = deviceRef.current;
+      
+      const { id, producerId, kind, rtpParameters, appData } = await new Promise((resolve, reject) => {
+        socketRef.current.emit('consume', {
+          rtpCapabilities,
+          remoteProducerId: producer.producerId,
+          transportId: transport.id
+        }, (response) => {
+          if (response.error) {
+            console.error('Consume request failed:', response.error);
+            reject(new Error(response.error));
+            return;
+          }
+          resolve(response);
+        });
+      });
+
+      if (!id || !producerId || !kind || !rtpParameters) {
+        throw new Error('Invalid consumer data received from server');
+      }
+
+      const consumer = await transport.consume({
+        id,
+        producerId,
+        kind,
+        rtpParameters,
+        appData
+      });
+
+      console.log('Consumer created:', consumer.id);
+      consumersRef.current.set(consumer.id, consumer);
+
+      const stream = new MediaStream([consumer.track]);
+
+      if (appData?.mediaType === 'screen') {
+        console.log('Processing screen sharing stream:', { kind, appData });
+        
+        if (kind === 'video') {
+          console.log('Setting up screen sharing video');
+          setRemoteScreens(prev => {
+            const newScreens = new Map(prev);
+            newScreens.set(producer.producerSocketId, { 
+              producerId,
+              consumerId: consumer.id,
+              stream
+            });
+            return newScreens;
+          });
+        }
+      } else if (appData?.mediaType === 'webcam') {
+        console.log('Processing webcam stream:', { kind, appData });
+        
+        if (kind === 'video') {
+          console.log('Setting up webcam stream');
+          setRemoteVideos(prev => {
+            const newVideos = new Map(prev);
+            newVideos.set(producer.producerSocketId, {
+              producerId,
+              consumerId: consumer.id,
+              stream
+            });
+            return newVideos;
+          });
+        }
+      } else if (kind === 'audio') {
+        try {
+          const audio = new Audio();
+          audio.srcObject = stream;
+          audio.id = `audio-${producer.producerSocketId}`;
+          audio.autoplay = true;
+          audio.muted = false;
+
+          if (isMobile) {
+            await setAudioOutput(audio, useEarpiece);
+          }
+          
+          const audioContext = audioContextRef.current;
+          const source = audioContext.createMediaStreamSource(stream);
+          
+          const analyser = createAudioAnalyser(audioContext);
+          
+          const gainNode = audioContext.createGain();
+          gainNode.gain.value = 1.0;
+
+          source.connect(analyser);
+          analyser.connect(gainNode);
+
+          analyserNodesRef.current.set(producer.producerSocketId, analyser);
+          gainNodesRef.current.set(producer.producerSocketId, gainNode);
+          audioRef.current.set(producer.producerSocketId, audio);
+          setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
+
+          detectSpeaking(analyser, producer.producerSocketId);
+        } catch (error) {
+          console.error('Error setting up audio:', error);
+        }
+      }
+
+      consumer.on('transportclose', () => {
+        console.log('Consumer transport closed');
+        consumer.close();
+        consumersRef.current.delete(consumer.id);
+      });
+
+      consumer.on('producerclose', () => {
+        console.log('Producer closed');
+        consumer.close();
+        consumersRef.current.delete(consumer.id);
+      });
+
+      consumer.on('trackended', () => {
+        console.log('Track ended');
+        consumer.close();
+        consumersRef.current.delete(consumer.id);
+      });
+
+      return consumer;
+    } catch (error) {
+      console.error('Error consuming producer:', error);
+      throw error;
+    }
   };
 
   if (!isJoined) {

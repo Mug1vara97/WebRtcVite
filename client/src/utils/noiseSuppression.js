@@ -23,7 +23,8 @@ export class NoiseSuppressionManager {
     this.noiseGateNode = null;
     this.currentMode = null;
     this.producer = null;
-    this.originalTrack = null;
+    this.originalStream = null;
+    this.processedStream = null;
     this._isInitialized = false;
     this.wasmBinaries = {
       speex: null,
@@ -38,12 +39,15 @@ export class NoiseSuppressionManager {
         return false;
       }
 
+      this.originalStream = stream;
+      
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 48000,
         latencyHint: 'interactive'
       });
 
-      // Load WASM binaries first
+      this.processedStream = new MediaStream();
+
       console.log('Loading WASM binaries...');
       const [speexWasmBinary, rnnoiseWasmBinary] = await Promise.all([
         loadSpeex({ url: speexWasmPath }),
@@ -56,19 +60,12 @@ export class NoiseSuppressionManager {
       this.wasmBinaries.speex = speexWasmBinary;
       this.wasmBinaries.rnnoise = rnnoiseWasmBinary;
 
-      // Create source from input stream
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
 
-      // Store original track for later use
-      this.originalTrack = stream.getAudioTracks()[0].clone();
-
-      // Create destination node
       this.destinationNode = this.audioContext.createMediaStreamDestination();
-      this.destinationNode.channelCount = 2;
-      this.destinationNode.channelCountMode = 'explicit';
-      this.destinationNode.channelInterpretation = 'speakers';
+      
+      this.processedStream.addTrack(this.destinationNode.stream.getAudioTracks()[0]);
 
-      // Initialize worklet processors
       console.log('Loading worklet modules...');
       await Promise.all([
         this.audioContext.audioWorklet.addModule(rnnoiseWorkletPath),
@@ -76,7 +73,6 @@ export class NoiseSuppressionManager {
         this.audioContext.audioWorklet.addModule(noiseGateWorkletPath)
       ]);
 
-      // Create worklet nodes with stereo support
       this.rnnWorkletNode = new RnnoiseWorkletNode(this.audioContext, {
         wasmBinary: this.wasmBinaries.rnnoise,
         maxChannels: 2
@@ -94,11 +90,9 @@ export class NoiseSuppressionManager {
         maxChannels: 2
       });
 
-      // Create gain node
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = 1.0;
 
-      // Connect source to destination initially
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
 
@@ -114,6 +108,10 @@ export class NoiseSuppressionManager {
     return this._isInitialized;
   }
 
+  getProcessedStream() {
+    return this.processedStream;
+  }
+
   async enable(mode = 'rnnoise') {
     try {
       if (!this._isInitialized) {
@@ -121,7 +119,6 @@ export class NoiseSuppressionManager {
         return false;
       }
 
-      // Disconnect current processing chain
       this.sourceNode.disconnect();
       this.gainNode.disconnect();
 
@@ -140,16 +137,14 @@ export class NoiseSuppressionManager {
           throw new Error('Invalid noise suppression mode');
       }
 
-      // Connect new processing chain
       this.sourceNode.connect(processingNode);
       processingNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
 
       this.currentMode = mode;
 
-      // Update producer track if exists
       if (this.producer) {
-        const newTrack = this.destinationNode.stream.getAudioTracks()[0];
+        const newTrack = this.processedStream.getAudioTracks()[0];
         await this.producer.replaceTrack({ track: newTrack });
       }
 
@@ -167,7 +162,6 @@ export class NoiseSuppressionManager {
         return false;
       }
 
-      // Disconnect all processing nodes
       this.sourceNode.disconnect();
       if (this.currentMode) {
         switch (this.currentMode) {
@@ -184,15 +178,13 @@ export class NoiseSuppressionManager {
       }
       this.gainNode.disconnect();
 
-      // Reconnect direct path
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
 
       this.currentMode = null;
 
-      // Update producer track if exists
       if (this.producer) {
-        const newTrack = this.destinationNode.stream.getAudioTracks()[0];
+        const newTrack = this.originalStream.getAudioTracks()[0];
         await this.producer.replaceTrack({ track: newTrack });
       }
 
@@ -217,11 +209,10 @@ export class NoiseSuppressionManager {
         this.audioContext.close();
       }
 
-      if (this.originalTrack) {
-        this.originalTrack.stop();
+      if (this.originalStream) {
+        this.originalStream.getTracks().forEach(track => track.stop());
       }
 
-      // Destroy worklet nodes
       this.rnnWorkletNode?.destroy?.();
       this.speexWorkletNode?.destroy?.();
 
@@ -234,7 +225,8 @@ export class NoiseSuppressionManager {
       this.noiseGateNode = null;
       this.currentMode = null;
       this.producer = null;
-      this.originalTrack = null;
+      this.originalStream = null;
+      this.processedStream = null;
       this._isInitialized = false;
       this.wasmBinaries = {
         speex: null,
