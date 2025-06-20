@@ -28,5 +28,7 @@ export default defineConfig({
   },
   worker: {
     format: 'es'
-  }
+  },
+  assetsInclude: ['**/*.wasm'],
+  publicDir: 'public'
 })

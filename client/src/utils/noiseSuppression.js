@@ -4,15 +4,15 @@ import {
   NoiseGateWorkletNode
 } from '@sapphi-red/web-noise-suppressor'
 
-// Импортируем пути к воркерам напрямую
-import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/dist/rnnoise/rnnoise.wasm?url'
-import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/dist/rnnoise/rnnoise-simd.wasm?url'
-import speexWasmUrl from '@sapphi-red/web-noise-suppressor/dist/speex/speex.wasm?url'
-
 // Пути к воркерам
 const RNNOISE_WORKLET_PATH = '/worklets/rnnoise-processor.js'
 const SPEEX_WORKLET_PATH = '/worklets/speex-processor.js'
 const NOISEGATE_WORKLET_PATH = '/worklets/noisegate-processor.js'
+
+// Пути к WASM файлам
+const RNNOISE_WASM_PATH = '/wasm/rnnoise.wasm'
+const RNNOISE_SIMD_WASM_PATH = '/wasm/rnnoise-simd.wasm'
+const SPEEX_WASM_PATH = '/wasm/speex.wasm'
 
 export class NoiseSuppressionManager {
   constructor() {
@@ -72,15 +72,15 @@ export class NoiseSuppressionManager {
       switch (mode) {
         case 'rnnoise': {
           this.noiseNode = new RNNoiseNode(this.audioContext, {
-            wasmUrl: rnnoiseWasmUrl,
-            simdWasmUrl: rnnoiseSimdWasmUrl,
+            wasmUrl: RNNOISE_WASM_PATH,
+            simdWasmUrl: RNNOISE_SIMD_WASM_PATH,
             workletUrl: RNNOISE_WORKLET_PATH
           });
           break;
         }
         case 'speex': {
           this.noiseNode = new SpeexWorkletNode(this.audioContext, {
-            wasmUrl: speexWasmUrl,
+            wasmUrl: SPEEX_WASM_PATH,
             workletUrl: SPEEX_WORKLET_PATH
           });
           break;
