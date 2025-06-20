@@ -15,6 +15,7 @@ import {
   ListItemIcon,
   Divider,
   Slider,
+  Switch,
 } from '@mui/material';
 import {
   Mic,
@@ -30,10 +31,13 @@ import {
   Videocam,
   VideocamOff,
   VolumeUpRounded,
-  Hearing
+  Hearing,
+  NoiseAware,
+  NoiseControlOff
 } from '@mui/icons-material';
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
+import { NoiseSuppressionManager } from './utils/noiseSuppression';
 
 
 const config = {
@@ -901,6 +905,8 @@ function App() {
   const [videoProducer, setVideoProducer] = useState(null);
   const [videoStream, setVideoStream] = useState(null);
   const [remoteVideos, setRemoteVideos] = useState(new Map());
+  const [isNoiseSuppressed, setIsNoiseSuppressed] = useState(false);
+  const noiseSuppressionRef = useRef(null);
 
 
   const socketRef = useRef();
@@ -1165,6 +1171,13 @@ function App() {
       audioContextRef.current = null;
 
       deviceRef.current = null;
+      
+      // Cleanup noise suppression
+      if (noiseSuppressionRef.current) {
+        noiseSuppressionRef.current.cleanup();
+        noiseSuppressionRef.current = null;
+      }
+
     } catch (error) {
       console.error('Cleanup error:', error);
     }
@@ -1776,6 +1789,16 @@ function App() {
       console.log('Audio track settings:', stream.getAudioTracks()[0].getSettings());
 
       localStreamRef.current = stream;
+      
+      // Initialize noise suppression
+      if (!noiseSuppressionRef.current) {
+        noiseSuppressionRef.current = new NoiseSuppressionManager();
+      }
+      
+      const initResult = await noiseSuppressionRef.current.initialize(stream);
+      if (initResult && isNoiseSuppressed) {
+        await noiseSuppressionRef.current.enable();
+      }
       
       const track = stream.getAudioTracks()[0];
       if (!track) {
@@ -2409,6 +2432,32 @@ function App() {
     }
   };
 
+  // Add noise suppression toggle handler
+  const handleNoiseSuppressionToggle = async () => {
+    try {
+      if (!noiseSuppressionRef.current || !localStreamRef.current) {
+        console.error('Noise suppression or stream not initialized');
+        return;
+      }
+
+      const newState = !isNoiseSuppressed;
+      let success = false;
+
+      if (newState) {
+        success = await noiseSuppressionRef.current.enable();
+      } else {
+        success = await noiseSuppressionRef.current.disable();
+      }
+
+      if (success) {
+        setIsNoiseSuppressed(newState);
+        console.log('Noise suppression ' + (newState ? 'enabled' : 'disabled'));
+      }
+    } catch (error) {
+      console.error('Error toggling noise suppression:', error);
+    }
+  };
+
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -2677,6 +2726,14 @@ function App() {
                 title={isVideoEnabled ? "Stop camera" : "Start camera"}
               >
                 {isVideoEnabled ? <VideocamOff /> : <Videocam />}
+              </IconButton>
+              <IconButton
+                sx={styles.iconButton}
+                onClick={handleNoiseSuppressionToggle}
+                title={isNoiseSuppressed ? "Disable noise suppression" : "Enable noise suppression"}
+                disabled={!noiseSuppressionRef.current?.isInitialized()}
+              >
+                {isNoiseSuppressed ? <NoiseAware /> : <NoiseControlOff />}
               </IconButton>
             </Box>
             <Box sx={styles.controlGroup}>
