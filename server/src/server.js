@@ -170,10 +170,13 @@ io.on('connection', async (socket) => {
             // Join room
             socket.join(roomId);
 
-            // Get existing peers
-            const existingPeers = Array.from(room.getPeers().values())
-                .filter(p => p.id !== socket.id)
-                .map(p => ({ id: p.id, name: p.name }));
+            // Get existing peers with their states
+            const peersInfo = Array.from(room.getPeers().values()).map(peer => ({
+                id: peer.id,
+                name: peer.name,
+                isMuted: peer.isMuted(),
+                isAudioDisabled: peer.isAudioDisabled()
+            }));
 
             // Get existing producers
             const existingProducers = [];
@@ -189,9 +192,10 @@ io.on('connection', async (socket) => {
 
             // Send router RTP capabilities and existing peers/producers
             callback({
+                error: null,
                 routerRtpCapabilities: room.router.rtpCapabilities,
-                existingPeers,
-                existingProducers
+                existingPeers: peersInfo,
+                existingProducers: existingProducers
             });
 
             // Notify other peers about the new peer
@@ -201,7 +205,7 @@ io.on('connection', async (socket) => {
             });
 
             console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
-            console.log('Existing peers:', existingPeers);
+            console.log('Existing peers:', peersInfo);
             console.log('Existing producers:', existingProducers);
         } catch (error) {
             console.error('Error in join:', error);

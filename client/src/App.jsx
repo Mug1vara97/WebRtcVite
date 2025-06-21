@@ -1021,7 +1021,7 @@ function App() {
         setRemoteScreens(prev => {
           const newScreens = new Map(prev);
           const screenEntry = [...newScreens.entries()].find(
-            ([id, data]) => data.producerId === producerId
+            ([_, data]) => data.producerId === producerId
           );
           
           if (screenEntry) {
@@ -1045,7 +1045,7 @@ function App() {
         setRemoteVideos(prev => {
           const newVideos = new Map(prev);
           const videoEntry = [...newVideos.entries()].find(
-            ([id, data]) => data.producerId === producerId
+            ([_, data]) => data.producerId === producerId
           );
           
           if (videoEntry) {
@@ -1063,7 +1063,7 @@ function App() {
 
               // Находим и закрываем соответствующий consumer
               const consumer = Array.from(consumersRef.current.entries()).find(
-                ([id, consumer]) => consumer.producerId === producerId
+                ([_, consumer]) => consumer.producerId === producerId
               );
               if (consumer) {
                 console.log('Found and closing associated consumer:', consumer[0]);
@@ -1310,10 +1310,15 @@ function App() {
             if (existingPeers && existingPeers.length > 0) {
               console.log('Setting existing peers:', existingPeers);
               const peersMap = new Map();
+              const audioDisabledMap = new Map();
               existingPeers.forEach(peer => {
                 peersMap.set(peer.id, { id: peer.id, name: peer.name, isMuted: peer.isMuted || false });
+                if (peer.isAudioDisabled) {
+                  audioDisabledMap.set(peer.id, true);
+                }
               });
               setPeers(peersMap);
+              setAudioDisabledPeers(audioDisabledMap);
             }
 
             // Initialize Web Audio API context
@@ -2741,6 +2746,16 @@ function App() {
           }
           console.log('New audio disabled states:', Object.fromEntries(newStates));
           return newStates;
+        });
+
+        // Также обновляем состояние в peers
+        setPeers(prev => {
+          const newPeers = new Map(prev);
+          const peer = newPeers.get(peerId);
+          if (peer) {
+            newPeers.set(peerId, { ...peer, isAudioDisabled });
+          }
+          return newPeers;
         });
       });
 
