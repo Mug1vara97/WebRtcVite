@@ -2270,9 +2270,9 @@ function App() {
     }
   };
 
-  const detectSpeaking = async (analyser, peerId) => {
+  const detectSpeaking = async (analyser, peerId, producerId = null) => {
     try {
-      console.log('Initializing voice detection for peer:', peerId);
+      console.log('Initializing voice detection for peer:', peerId, 'producerId:', producerId);
       
       if (!audioContextRef.current) {
         console.error('AudioContext not initialized');
@@ -2314,9 +2314,20 @@ function App() {
         const retryDelay = 1000; // 1 секунда между попытками
 
         while (retries < maxRetries) {
-          const consumer = [...consumersRef.current.values()].find(c => 
-            c.appData?.peerId === peerId && c.kind === 'audio'
-          );
+          // Сначала пытаемся найти по producerId если он есть
+          let consumer;
+          if (producerId) {
+            consumer = [...consumersRef.current.values()].find(c => c.producerId === producerId);
+            console.log('Searching consumer by producerId:', producerId, 'found:', !!consumer);
+          }
+          
+          // Если не нашли по producerId, пробуем по peerId
+          if (!consumer) {
+            consumer = [...consumersRef.current.values()].find(c => 
+              c.appData?.peerId === peerId && c.kind === 'audio'
+            );
+            console.log('Searching consumer by peerId:', peerId, 'found:', !!consumer);
+          }
           
           if (consumer) {
             stream = new MediaStream([consumer.track]);
@@ -2352,17 +2363,7 @@ function App() {
       source.connect(voiceDetectorNode);
       console.log('Connected source to voice detector');
 
-      // Если это удаленный пользователь, подключаем к выходу
-      if (peerId !== socketRef.current?.id) {
-        const gainNode = gainNodesRef.current.get(peerId);
-        if (gainNode) {
-          voiceDetectorNode.connect(gainNode);
-          gainNode.connect(audioContextRef.current.destination);
-          console.log('Connected voice detector to output chain');
-        }
-      }
-
-      // Обрабатываем сообщения от воркера
+      // Обработчик сообщений от воркера
       voiceDetectorNode.port.onmessage = (event) => {
         const { speaking } = event.data;
         console.log('Voice detection event:', { peerId, speaking });
@@ -2642,7 +2643,8 @@ function App() {
           audioRef.current.set(producer.producerSocketId, audio);
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
-          detectSpeaking(analyser, producer.producerSocketId);
+          // Start voice detection with producerId
+          detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
