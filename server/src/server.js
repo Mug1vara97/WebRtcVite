@@ -170,13 +170,10 @@ io.on('connection', async (socket) => {
             // Join room
             socket.join(roomId);
 
-            // Get existing peers with their states
-            const peersInfo = Array.from(room.getPeers().values()).map(peer => ({
-                id: peer.id,
-                name: peer.name,
-                isMuted: peer.isMuted(),
-                isAudioDisabled: peer.isAudioDisabled()
-            }));
+            // Get existing peers
+            const existingPeers = Array.from(room.getPeers().values())
+                .filter(p => p.id !== socket.id)
+                .map(p => ({ id: p.id, name: p.name }));
 
             // Get existing producers
             const existingProducers = [];
@@ -192,10 +189,9 @@ io.on('connection', async (socket) => {
 
             // Send router RTP capabilities and existing peers/producers
             callback({
-                error: null,
                 routerRtpCapabilities: room.router.rtpCapabilities,
-                existingPeers: peersInfo,
-                existingProducers: existingProducers
+                existingPeers,
+                existingProducers
             });
 
             // Notify other peers about the new peer
@@ -205,7 +201,7 @@ io.on('connection', async (socket) => {
             });
 
             console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
-            console.log('Existing peers:', peersInfo);
+            console.log('Existing peers:', existingPeers);
             console.log('Existing producers:', existingProducers);
         } catch (error) {
             console.error('Error in join:', error);
@@ -811,43 +807,15 @@ io.on('connection', async (socket) => {
         }
     });
 
-    // Update audio disabled state handling
+    // Add audio disabled state handling
     socket.on('audioDisabledStateChanged', ({ isAudioDisabled }) => {
-        console.log('Received audioDisabledStateChanged event:', { 
-            socketId: socket.id, 
-            roomId: socket.data?.roomId, 
-            isAudioDisabled 
-        });
-
         if (!socket.data?.roomId) {
             console.error('Room ID not found for socket:', socket.id);
             return;
         }
 
-        const room = rooms.get(socket.data.roomId);
-        if (!room) {
-            console.error('Room not found:', socket.data.roomId);
-            return;
-        }
-
-        const peer = peers.get(socket.id);
-        if (!peer) {
-            console.error('Peer not found:', socket.id);
-            return;
-        }
-
-        // Обновляем состояние аудио пира
-        peer.setAudioDisabled(isAudioDisabled);
-        room.setPeerAudioDisabledState(socket.id, isAudioDisabled);
-
-        console.log('Broadcasting audio disabled state:', {
-            roomId: socket.data.roomId,
-            peerId: socket.id,
-            isAudioDisabled
-        });
-
-        // Broadcast to all peers in the room including the sender
-        io.to(socket.data.roomId).emit('peerAudioDisabledStateChanged', {
+        // Broadcast to all peers in the room except the sender
+        socket.to(socket.data.roomId).emit('peerAudioDisabledStateChanged', {
             peerId: socket.id,
             isAudioDisabled
         });
