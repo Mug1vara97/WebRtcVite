@@ -40,7 +40,7 @@ import {
 } from '@mui/icons-material';
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
-import { NoiseSuppressionManager } from './utils/noiseSuppression';
+import { noiseSuppression } from './utils/noiseSuppression';
 
 
 const config = {
@@ -116,6 +116,7 @@ const styles = {
     flexDirection: 'column',
     backgroundColor: '#36393f',
     color: '#dcddde',
+    overflow: 'hidden',
     '@keyframes pulse': {
       '0%': {
         boxShadow: '0 0 0 2px rgba(59, 165, 92, 0.8)'
@@ -156,19 +157,19 @@ const styles = {
   },
   container: {
     flex: 1,
-    padding: '16px',
+    padding: '0',
     backgroundColor: '#313338',
     display: 'flex',
     flexDirection: 'column',
     '@media (max-width: 600px)': {
-      padding: '8px',
+      padding: '0',
     }
   },
   videoGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '8px',
-    padding: '16px',
+    padding: '0',
     width: '100%',
     maxWidth: '1200px',
     margin: '0 auto'
@@ -184,6 +185,7 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     transition: 'box-shadow 0.3s ease-in-out',
+    margin: '0',
     '&.speaking': {
       '&::after': {
         content: '""',
@@ -355,7 +357,8 @@ const styles = {
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 1000
+    zIndex: 1000,
+    marginTop: 'auto'
   },
   controlsGroup: {
     display: 'flex',
@@ -1785,7 +1788,7 @@ function App() {
       
       // Initialize noise suppression
       if (!noiseSuppressionRef.current) {
-        noiseSuppressionRef.current = new NoiseSuppressionManager();
+        noiseSuppressionRef.current = new noiseSuppression();
       }
       
       const initResult = await noiseSuppressionRef.current.initialize(stream);
@@ -2470,29 +2473,18 @@ function App() {
 
   const handleNoiseSuppressionModeSelect = async (mode) => {
     try {
-      if (!noiseSuppressionRef.current || !localStreamRef.current) {
-        console.error('Noise suppression or stream not initialized');
-        return;
-      }
-
-      let success = false;
-
-      if (!isNoiseSuppressed) {
-        success = await noiseSuppressionRef.current.enable(mode);
-      } else if (mode !== noiseSuppressionMode) {
-        // Если меняем режим при включенном шумоподавлении
-        success = await noiseSuppressionRef.current.enable(mode);
-      }
-
-      if (success) {
-        setNoiseSuppressionMode(mode);
+      if (mode === 'off') {
+        await noiseSuppression.disable();
+        setIsNoiseSuppressed(false);
+      } else {
+        await noiseSuppression.enable(mode);
         setIsNoiseSuppressed(true);
-        console.log('Noise suppression mode changed to:', mode);
       }
+      handleNoiseSuppressionMenuClose();
     } catch (error) {
       console.error('Error changing noise suppression mode:', error);
+      setError('Failed to change noise suppression mode: ' + error.message);
     }
-    handleNoiseSuppressionMenuClose();
   };
 
   const handleConsume = async (producer) => {
@@ -2687,7 +2679,50 @@ function App() {
                 {roomId}
               </Typography>
             </Box>
-
+            <Box sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 12px',
+              borderRadius: '4px',
+              backgroundColor: '#2B2D31',
+              marginLeft: 'auto',
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                backgroundColor: '#383A40'
+              },
+              '@media (max-width: 600px)': {
+                padding: '4px 8px',
+                gap: '4px',
+              }
+            }}>
+              <Box sx={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                transition: 'all 0.3s ease',
+                backgroundColor: isNoiseSuppressed ? '#3ba55c' : '#ed4245',
+                boxShadow: isNoiseSuppressed 
+                  ? '0 0 8px rgba(59, 165, 92, 0.5)' 
+                  : '0 0 8px rgba(237, 66, 69, 0.5)'
+              }} />
+              <Typography variant="subtitle2" sx={{ 
+                color: isNoiseSuppressed ? '#3ba55c' : '#ed4245',
+                fontWeight: 500,
+                fontSize: '0.875rem'
+              }}>
+                Noise Suppression {isNoiseSuppressed ? 'On' : 'Off'}
+                {isNoiseSuppressed && (
+                  <Typography component="span" sx={{ 
+                    ml: 1,
+                    color: '#72767d',
+                    fontSize: '0.75rem'
+                  }}>
+                    ({noiseSuppression.getCurrentMode()})
+                  </Typography>
+                )}
+              </Typography>
+            </Box>
           </Toolbar>
         </AppBar>
         <Container sx={styles.container}>

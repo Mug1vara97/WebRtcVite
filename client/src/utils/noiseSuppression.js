@@ -250,4 +250,8 @@ export class NoiseSuppressionManager {
       console.error('Error during cleanup:', error);
     }
   }
+
+  getCurrentMode() {
+    return this.currentMode;
+  }
 } 
