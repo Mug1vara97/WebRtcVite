@@ -2258,7 +2258,7 @@ function App() {
     }
   };
 
-  const detectSpeaking = (analyser, peerId, threshold = -45) => {  // Увеличиваем чувствительность с -35 до -45
+  const detectSpeaking = (analyser, peerId, threshold = -50) => {  // Увеличиваем чувствительность с -35 до -45
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Float32Array(bufferLength);
     let speakingStartTime = 0;
@@ -2267,7 +2267,7 @@ function App() {
     const SILENCE_DELAY = 200;   // Уменьшаем задержку тишины
     let consecutiveSpeakingFrames = 0;
     let consecutiveSilentFrames = 0;
-    const FRAMES_THRESHOLD = 2;   // Уменьшаем порог для более быстрой реакции
+    const FRAMES_THRESHOLD = 4;   // Уменьшаем порог для более быстрой реакции
     let lastSpeakingState = false;
     
     const checkAudioLevel = () => {

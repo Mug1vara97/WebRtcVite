@@ -77,7 +77,7 @@ export class NoiseSuppressionManager {
         wasmBinary: this.wasmBinaries.rnnoise,
         maxChannels: 2,
         vadOffset: 0.25,
-        gainOffset: -20,
+        gainOffset: -25,
         enableVAD: true
       });
 
@@ -88,7 +88,7 @@ export class NoiseSuppressionManager {
         aggressiveness: 15,
         vadOffset: 1.5,
         enableVAD: true,
-        gainOffset: -10
+        gainOffset: -15
       });
 
       this.noiseGateNode = new NoiseGateWorkletNode(this.audioContext, {
@@ -99,7 +99,7 @@ export class NoiseSuppressionManager {
       });
 
       this.gainNode = this.audioContext.createGain();
-      this.gainNode.gain.value = 0.5;
+      this.gainNode.gain.value = 0.3;
 
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
