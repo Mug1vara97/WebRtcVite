@@ -1776,7 +1776,7 @@ function App() {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 1,
+          channelCount: 2,
           sampleRate: 48000
         }
       });
