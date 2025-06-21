@@ -41,7 +41,6 @@ import {
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
 import { NoiseSuppressionManager } from './utils/noiseSuppression';
-import voiceDetectorWorklet from './utils/voiceDetector.worklet.js?url';
 
 
 const config = {
@@ -2283,8 +2282,8 @@ function App() {
     }
 
     try {
-      // Загружаем воркер если еще не загружен
-      await audioContext.audioWorklet.addModule('/src/utils/voiceDetector.worklet.js');
+      // Используем относительный путь от корня приложения
+      await audioContext.audioWorklet.addModule('./src/utils/voiceDetector.worklet.js');
 
       // Создаем узел воркера
       return new AudioWorkletNode(audioContext, 'voice-detector', {
@@ -2304,8 +2303,7 @@ function App() {
     try {
       const audioContext = audioContextRef.current;
       const voiceDetectorNode = await createVoiceDetectorNode(audioContext);
-      console.log('Voice detector worklet loaded successfully');
-
+      
       if (!voiceDetectorNode) {
         console.error('Failed to create voice detector node');
         return;
@@ -2354,7 +2352,7 @@ function App() {
           return newStates;
         });
 
-        socket.emit('speakingStateChanged', speakingEvent);
+        socketRef.current?.emit('speakingStateChanged', speakingEvent);
       };
 
       voiceDetectorNodesRef.current.set(peerId, voiceDetectorNode);
