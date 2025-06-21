@@ -41,6 +41,7 @@ import {
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
 import { NoiseSuppressionManager } from './utils/noiseSuppression';
+import voiceDetectorWorklet from './utils/voiceDetector.worklet.js?url';
 
 
 const config = {
@@ -912,36 +913,9 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
-  const voiceProcessorRef = useRef(null);
-
-  useEffect(() => {
-    // Initialize audio context with high priority
-    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 48000,
-        latencyHint: 'interactive'
-      });
-    }
-
-    // Keep audio context running in background
-    const handleVisibilityChange = async () => {
-      if (document.hidden) {
-        // When page becomes hidden, ensure audio context stays running
-        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-          await audioContextRef.current.resume();
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
 
-
-const socketRef = useRef();
+  const socketRef = useRef();
   const deviceRef = useRef();
   const producerTransportRef = useRef();
   const consumerTransportsRef = useRef(new Map());
@@ -953,59 +927,6 @@ const socketRef = useRef();
   const gainNodesRef = useRef(new Map());
   const analyserNodesRef = useRef(new Map());
   const animationFramesRef = useRef(new Map());
-
-  useEffect(() => {
-    const resumeAudioContext = async () => {
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-        try {
-          await audioContextRef.current.resume();
-          console.log('AudioContext resumed successfully');
-        } catch (error) {
-          console.error('Failed to resume AudioContext:', error);
-        }
-      }
-    };
-
-    const handleInteraction = async () => {
-      await resumeAudioContext();
-      document.removeEventListener('click', handleInteraction);
-      document.removeEventListener('touchstart', handleInteraction);
-    };
-
-    if (socketRef.current) {
-      socketRef.current.on('speakingStateChanged', ({ peerId, speaking }) => {
-        setSpeakingStates(prev => {
-          const newStates = new Map(prev);
-          newStates.set(peerId, speaking);
-          return newStates;
-        });
-      });
-
-      socketRef.current.on('peerMuteStateChanged', ({ peerId, isMuted }) => {
-        setVolumes(prev => {
-          const newVolumes = new Map(prev);
-          newVolumes.set(peerId, isMuted ? 0 : 100);
-          return newVolumes;
-        });
-        
-        if (isMuted) {
-          setSpeakingStates(prev => {
-            const newStates = new Map(prev);
-            newStates.set(peerId, false);
-            return newStates;
-          });
-        }
-      });
-    }
-
-    document.addEventListener('click', handleInteraction);
-    document.addEventListener('touchstart', handleInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleInteraction);
-      document.removeEventListener('touchstart', handleInteraction);
-    };
-  }, []);
 
   useEffect(() => {
     const resumeAudioContext = async () => {
@@ -1183,6 +1104,17 @@ const socketRef = useRef();
 
       setIsScreenSharing(false);
       setRemoteScreens(new Map());
+
+      // Очищаем воркеры определения голоса
+      audioRef.current.forEach((peerAudio, peerId) => {
+        if (peerAudio instanceof Map && peerAudio.has('voiceDetector')) {
+          const voiceDetector = peerAudio.get('voiceDetector');
+          if (voiceDetector) {
+            voiceDetector.port.close();
+            voiceDetector.disconnect();
+          }
+        }
+      });
 
       // Cancel all animation frames
       animationFramesRef.current.forEach((frameId) => {
@@ -2338,24 +2270,105 @@ const socketRef = useRef();
     }
   };
 
-  const detectSpeaking = (analyser, peerId, threshold = -50) => {
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Float32Array(bufferLength);
-    let speakingStartTime = 0;
-    let silenceStartTime = 0;
-    const SPEAKING_DELAY = 50;
-    const SILENCE_DELAY = 200;
-    let consecutiveSpeakingFrames = 0;
-    let consecutiveSilentFrames = 0;
-    const FRAMES_THRESHOLD = 4;
-    let lastSpeakingState = false;
-    let isProcessing = true;
+  const detectSpeaking = async (analyser, peerId, producerId = null) => {
+    try {
+      console.log('Initializing voice detection for peer:', peerId, 'producerId:', producerId);
+      
+      if (!audioContextRef.current) {
+        console.error('AudioContext not initialized');
+        return;
+      }
 
-    const processAudioData = () => {
-      if (!isProcessing) return;
+      if (!audioContextRef.current.audioWorklet) {
+        console.error('AudioWorklet not supported');
+        return;
+      }
 
+      // Загружаем воркер если еще не загружен
       try {
-        // Handle mute states first
+        await audioContextRef.current.audioWorklet.addModule(voiceDetectorWorklet);
+        console.log('Voice detector worklet loaded successfully');
+      } catch (error) {
+        console.error('Failed to load voice detector worklet:', error);
+        return;
+      }
+
+      // Создаем узел воркера
+      const voiceDetectorNode = new AudioWorkletNode(audioContextRef.current, 'voice-detector', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 1
+      });
+      
+      console.log('Voice detector node created');
+
+      // Получаем поток для обработки
+      let stream;
+      if (peerId === socketRef.current?.id) {
+        stream = noiseSuppressionRef.current?.getProcessedStream() || localStreamRef.current;
+        console.log('Using local stream for voice detection');
+      } else {
+        // Добавляем механизм повторных попыток для получения consumer'а
+        let retries = 0;
+        const maxRetries = 5;
+        const retryDelay = 1000; // 1 секунда между попытками
+
+        while (retries < maxRetries) {
+          // Сначала пытаемся найти по producerId если он есть
+          let consumer;
+          if (producerId) {
+            consumer = [...consumersRef.current.values()].find(c => c.producerId === producerId);
+            console.log('Searching consumer by producerId:', producerId, 'found:', !!consumer);
+          }
+          
+          // Если не нашли по producerId, пробуем по peerId
+          if (!consumer) {
+            consumer = [...consumersRef.current.values()].find(c => 
+              c.appData?.peerId === peerId && c.kind === 'audio'
+            );
+            console.log('Searching consumer by peerId:', peerId, 'found:', !!consumer);
+          }
+          
+          if (consumer) {
+            stream = new MediaStream([consumer.track]);
+            console.log('Found consumer and created stream for peer:', peerId);
+            break;
+          }
+
+          console.log(`Attempt ${retries + 1}/${maxRetries} to get consumer for peer:`, peerId);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          retries++;
+        }
+
+        if (!stream) {
+          console.error(`Failed to get consumer for peer ${peerId} after ${maxRetries} attempts`);
+          return;
+        }
+      }
+
+      if (!stream) {
+        console.error('No stream available for voice detection');
+        return;
+      }
+
+      // Отключаем старые соединения
+      analyser.disconnect();
+      console.log('Disconnected old analyzer');
+
+      // Создаем новый источник из потока
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      console.log('Created media stream source');
+
+      // Подключаем узлы
+      source.connect(voiceDetectorNode);
+      console.log('Connected source to voice detector');
+
+      // Обработчик сообщений от воркера
+      voiceDetectorNode.port.onmessage = (event) => {
+        const { speaking } = event.data;
+        console.log('Voice detection event:', { peerId, speaking });
+        
+        // Проверяем состояние мьюта
         if ((peerId === socketRef.current?.id && isMuted) || 
             (peerId !== socketRef.current?.id && (volumes.get(peerId) || 100) === 0)) {
           if (speakingStates.get(peerId)) {
@@ -2368,62 +2381,32 @@ const socketRef = useRef();
               socketRef.current.emit('speaking', { speaking: false });
             }
           }
-          const frameId = requestAnimationFrame(checkAudioLevel);
-          animationFramesRef.current.set(peerId, frameId);
           return;
         }
 
-        // Get time domain data
-        analyser.getFloatTimeDomainData(dataArray);
+        // Обновляем состояние говорения
+        setSpeakingStates(prev => {
+          const newStates = new Map(prev);
+          newStates.set(peerId, speaking);
+          return newStates;
+        });
         
-        // Send audio data to service worker for processing
-        if (voiceWorkerRef.current) {
-          navigator.serviceWorker.ready.then(registration => {
-            registration.active.postMessage({
-              type: 'UPDATE_AUDIO_DATA',
-              data: Array.from(dataArray)
-            });
-          });
+        // Отправляем состояние на сервер только для локального пользователя
+        if (socketRef.current && peerId === socketRef.current.id) {
+          socketRef.current.emit('speaking', { speaking });
         }
-        
-        const frameId = requestAnimationFrame(checkAudioLevel);
-        animationFramesRef.current.set(peerId, frameId);
-      } catch (error) {
-        console.error('Error in checkAudioLevel:', error);
-        const frameId = requestAnimationFrame(checkAudioLevel);
-        animationFramesRef.current.set(peerId, frameId);
+      };
+
+      // Сохраняем ссылку на узел для очистки
+      if (!audioRef.current.has(peerId)) {
+        audioRef.current.set(peerId, new Map());
       }
-    };
-    
-    // Start voice detection in service worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(registration => {
-        registration.active.postMessage({
-          type: 'START_VOICE_DETECTION',
-          data: {
-            threshold,
-            peerId
-          }
-        });
-      });
+      audioRef.current.get(peerId).set('voiceDetector', voiceDetectorNode);
+
+      console.log('Voice detection setup completed for peer:', peerId);
+    } catch (error) {
+      console.error('Error in voice detection setup:', error);
     }
-    
-    checkAudioLevel();
-    
-    // Return cleanup function
-    return () => {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then(registration => {
-          registration.active.postMessage({
-            type: 'STOP_VOICE_DETECTION'
-          });
-        });
-      }
-      if (animationFramesRef.current.has(peerId)) {
-        cancelAnimationFrame(animationFramesRef.current.get(peerId));
-        animationFramesRef.current.delete(peerId);
-      }
-    };
   };
 
   // Update analyzer settings when creating audio nodes
@@ -2660,7 +2643,8 @@ const socketRef = useRef();
           audioRef.current.set(producer.producerSocketId, audio);
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
-          detectSpeaking(analyser, producer.producerSocketId);
+          // Start voice detection with producerId
+          detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
