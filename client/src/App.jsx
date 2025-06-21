@@ -1264,12 +1264,17 @@ function App() {
       });
 
       // Add handlers for peer events
-      socket.on('peerJoined', ({ peerId, name, isMuted }) => {
-        console.log('New peer joined:', name, peerId, 'muted:', isMuted);
+      socket.on('peerJoined', ({ peerId, name, isMuted, isAudioEnabled }) => {
+        console.log('New peer joined:', name, peerId, 'muted:', isMuted, 'audio:', isAudioEnabled);
         setPeers(prev => {
           const newPeers = new Map(prev);
           newPeers.set(peerId, { id: peerId, name, isMuted: isMuted || false });
           return newPeers;
+        });
+        setAudioStates(prev => {
+          const newStates = new Map(prev);
+          newStates.set(peerId, isAudioEnabled);
+          return newStates;
         });
       });
 
@@ -1279,6 +1284,11 @@ function App() {
           const newPeers = new Map(prev);
           newPeers.delete(peerId);
           return newPeers;
+        });
+        setAudioStates(prev => {
+          const newStates = new Map(prev);
+          newStates.delete(peerId);
+          return newStates;
         });
       });
 
@@ -1309,10 +1319,17 @@ function App() {
             if (existingPeers && existingPeers.length > 0) {
               console.log('Setting existing peers:', existingPeers);
               const peersMap = new Map();
+              const audioStatesMap = new Map();
               existingPeers.forEach(peer => {
-                peersMap.set(peer.id, { id: peer.id, name: peer.name, isMuted: peer.isMuted || false });
+                peersMap.set(peer.id, { 
+                  id: peer.id, 
+                  name: peer.name, 
+                  isMuted: peer.isMuted || false 
+                });
+                audioStatesMap.set(peer.id, peer.isAudioEnabled);
               });
               setPeers(peersMap);
+              setAudioStates(audioStatesMap);
             }
 
             // Initialize Web Audio API context
