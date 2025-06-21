@@ -2743,6 +2743,24 @@ function App() {
     }
   }, [isJoined, isAudioEnabled]);
 
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    // Add audio state change handler
+    socket.on('peerAudioStateChanged', ({ peerId, isEnabled }) => {
+      setAudioStates(prev => {
+        const newStates = new Map(prev);
+        newStates.set(peerId, isEnabled);
+        return newStates;
+      });
+    });
+
+    return () => {
+      socket.off('peerAudioStateChanged');
+    };
+  }, [socketRef.current]);
+
   if (!isJoined) {
     return (
       <Box sx={styles.root}>

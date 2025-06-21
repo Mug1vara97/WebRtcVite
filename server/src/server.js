@@ -154,60 +154,58 @@ io.on('connection', async (socket) => {
 
     socket.on('join', async ({ roomId, name }, callback) => {
         try {
-            let room = rooms.get(roomId);
+            const room = rooms.get(roomId);
             if (!room) {
-                const worker = await getMediasoupWorker();
-                room = await createRoom(roomId, worker);
-                rooms.set(roomId, room);
+                callback({ error: 'Room not found' });
+                return;
             }
 
-            // Get router RTP capabilities
-            const rtpCapabilities = room.router.rtpCapabilities;
-
-            // Create peer
             const peer = new Peer(socket, roomId, name);
             peers.set(socket.id, peer);
+            room.addPeer(peer);
+
+            // Store roomId in socket data
+            socket.data = { roomId };
 
             // Join room
             socket.join(roomId);
 
             // Get existing peers
-            const existingPeers = Array.from(peers.values())
-                .filter(p => p.roomId === roomId && p.id !== socket.id)
-                .map(p => ({
-                    id: p.id,
-                    name: p.name,
-                    isMuted: p.isMuted(),
-                    isAudioEnabled: true // Добавляем начальное состояние аудио
-                }));
+            const existingPeers = Array.from(room.getPeers().values())
+                .filter(p => p.id !== socket.id)
+                .map(p => ({ id: p.id, name: p.name }));
 
             // Get existing producers
             const existingProducers = [];
-            peers.forEach(peer => {
-                if (peer.roomId === roomId && peer.id !== socket.id) {
-                    peer.producers.forEach(producer => {
-                        existingProducers.push({
-                            producerId: producer.id,
-                            producerSocketId: peer.id,
-                            kind: producer.kind,
-                            appData: producer.appData
-                        });
+            room.producers.forEach((producerData, producerId) => {
+                if (producerData.peerId !== socket.id) {
+                    existingProducers.push({
+                        producerId,
+                        producerSocketId: producerData.peerId,
+                        kind: producerData.producer.kind
                     });
                 }
             });
 
-            // Notify other peers
-            socket.to(roomId).emit('peerJoined', {
-                peerId: socket.id,
-                name: name,
-                isMuted: false,
-                isAudioEnabled: true // Добавляем состояние аудио для нового пира
+            // Send router RTP capabilities and existing peers/producers
+            callback({
+                routerRtpCapabilities: room.router.rtpCapabilities,
+                existingPeers,
+                existingProducers
             });
 
-            callback({ error: null, routerRtpCapabilities, existingPeers, existingProducers });
+            // Notify other peers about the new peer
+            socket.to(roomId).emit('peerJoined', {
+                peerId: peer.id,
+                name: peer.name
+            });
+
+            console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
+            console.log('Existing peers:', existingPeers);
+            console.log('Existing producers:', existingProducers);
         } catch (error) {
-            console.error('Error joining room:', error);
-            callback({ error: 'Failed to join room' });
+            console.error('Error in join:', error);
+            callback({ error: error.message });
         }
     });
 
