@@ -912,8 +912,38 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
+  const voiceWorkerRef = useRef(null);
 
-  const socketRef = useRef();
+  // Add service worker registration
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/voice-worker.js')
+        .then(registration => {
+          console.log('Voice detection service worker registered:', registration);
+          voiceWorkerRef.current = registration.active;
+          
+          // Listen for messages from service worker
+          navigator.serviceWorker.addEventListener('message', (event) => {
+            const { type, data } = event.data;
+            if (type === 'VOICE_STATE') {
+              const { peerId, isSpeaking } = data;
+              setSpeakingStates(prev => {
+                const newStates = new Map(prev);
+                newStates.set(peerId, isSpeaking);
+                return newStates;
+              });
+              
+              if (socketRef.current && peerId === socketRef.current.id) {
+                socketRef.current.emit('speaking', { speaking: isSpeaking });
+              }
+            }
+          });
+        })
+        .catch(error => console.error('Service worker registration failed:', error));
+    }
+  }, []);
+
+const socketRef = useRef();
   const deviceRef = useRef();
   const producerTransportRef = useRef();
   const consumerTransportsRef = useRef(new Map());
@@ -2310,17 +2340,9 @@ function App() {
     }
   };
 
-  const detectSpeaking = (analyser, peerId, threshold = -50) => {  // Увеличиваем чувствительность с -35 до -45
+  const detectSpeaking = (analyser, peerId, threshold = -50) => {
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Float32Array(bufferLength);
-    let speakingStartTime = 0;
-    let silenceStartTime = 0;
-    const SPEAKING_DELAY = 50;   // Уменьшаем задержку для более быстрой реакции
-    const SILENCE_DELAY = 200;   // Уменьшаем задержку тишины
-    let consecutiveSpeakingFrames = 0;
-    let consecutiveSilentFrames = 0;
-    const FRAMES_THRESHOLD = 4;   // Уменьшаем порог для более быстрой реакции
-    let lastSpeakingState = false;
     
     const checkAudioLevel = () => {
       try {
@@ -2345,76 +2367,54 @@ function App() {
         // Get time domain data
         analyser.getFloatTimeDomainData(dataArray);
         
-        // Calculate RMS value
-        let rms = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            rms += dataArray[i] * dataArray[i];
-        }
-        rms = Math.sqrt(rms / bufferLength);
-
-        // Convert to dB
-        const db = 20 * Math.log10(rms);
-        
-        // Determine if speaking based on volume threshold
-        const isSpeakingNow = db > threshold;
-
-        const now = Date.now();
-
-        // Update speaking state with reduced delays
-        if (isSpeakingNow) {
-          consecutiveSpeakingFrames++;
-          consecutiveSilentFrames = 0;
-          
-          if (!speakingStartTime && consecutiveSpeakingFrames >= FRAMES_THRESHOLD) {
-            speakingStartTime = now;
-            silenceStartTime = 0;
-          }
-        } else {
-          consecutiveSpeakingFrames = 0;
-          consecutiveSilentFrames++;
-          
-          if (!silenceStartTime && consecutiveSilentFrames >= FRAMES_THRESHOLD) {
-            silenceStartTime = now;
-            speakingStartTime = 0;
-          }
-        }
-
-        // Update state with hysteresis
-        let shouldBeSpeeking = lastSpeakingState;
-        
-        if (speakingStartTime && (now - speakingStartTime) > SPEAKING_DELAY) {
-          shouldBeSpeeking = true;
-        } else if (silenceStartTime && (now - silenceStartTime) > SILENCE_DELAY) {
-          shouldBeSpeeking = false;
-        }
-
-        // Update state only if it changed
-        if (shouldBeSpeeking !== lastSpeakingState) {
-          lastSpeakingState = shouldBeSpeeking;
-          
-          setSpeakingStates(prev => {
-            const newStates = new Map(prev);
-            newStates.set(peerId, shouldBeSpeeking);
-            return newStates;
+        // Send audio data to service worker for processing
+        if (voiceWorkerRef.current) {
+          navigator.serviceWorker.ready.then(registration => {
+            registration.active.postMessage({
+              type: 'UPDATE_AUDIO_DATA',
+              data: Array.from(dataArray)
+            });
           });
-          
-          if (socketRef.current && peerId === socketRef.current.id) {
-            socketRef.current.emit('speaking', { speaking: shouldBeSpeeking });
-          }
-
-          // Log state changes for debugging
-          console.log(`Speaking state changed for ${peerId}:`, shouldBeSpeeking, 'dB:', db);
         }
+        
+        const frameId = requestAnimationFrame(checkAudioLevel);
+        animationFramesRef.current.set(peerId, frameId);
       } catch (error) {
         console.error('Error in checkAudioLevel:', error);
+        const frameId = requestAnimationFrame(checkAudioLevel);
+        animationFramesRef.current.set(peerId, frameId);
       }
-      
-      // Continue monitoring
-      const frameId = requestAnimationFrame(checkAudioLevel);
-      animationFramesRef.current.set(peerId, frameId);
     };
     
+    // Start voice detection in service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(registration => {
+        registration.active.postMessage({
+          type: 'START_VOICE_DETECTION',
+          data: {
+            threshold,
+            peerId
+          }
+        });
+      });
+    }
+    
     checkAudioLevel();
+    
+    // Return cleanup function
+    return () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(registration => {
+          registration.active.postMessage({
+            type: 'STOP_VOICE_DETECTION'
+          });
+        });
+      }
+      if (animationFramesRef.current.has(peerId)) {
+        cancelAnimationFrame(animationFramesRef.current.get(peerId));
+        animationFramesRef.current.delete(peerId);
+      }
+    };
   };
 
   // Update analyzer settings when creating audio nodes

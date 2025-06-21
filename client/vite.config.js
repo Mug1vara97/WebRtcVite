@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
@@ -16,11 +16,16 @@ export default defineConfig({
             return '[name][extname]';
           }
           return 'assets/[name]-[hash][extname]';
+        },
+        input: {
+          main: './index.html',
+          'voice-worker': './public/voice-worker.js'
         }
       }
     }
   },
   server: {
-    host: true
+    host: true,
+    port: 3000
   }
 })
