@@ -155,29 +155,20 @@ io.on('connection', async (socket) => {
     socket.on('join', async ({ roomId, name }, callback) => {
         try {
             let room = rooms.get(roomId);
-            
-            // Если комната не существует, создаем новую
             if (!room) {
-                console.log('Creating new room:', roomId);
                 const worker = await getMediasoupWorker();
                 room = await createRoom(roomId, worker);
                 rooms.set(roomId, room);
-            } else {
-                console.log('Joining existing room:', roomId);
             }
 
-            if (!room || !room.router) {
-                throw new Error('Failed to initialize room');
-            }
-
-            // Store roomId in socket data
-            socket.data = { ...socket.data, roomId };
+            // Get router RTP capabilities
+            const rtpCapabilities = room.router.rtpCapabilities;
 
             // Create peer
             const peer = new Peer(socket, roomId, name);
             peers.set(socket.id, peer);
 
-            // Join socket.io room
+            // Join room
             socket.join(roomId);
 
             // Get existing peers
@@ -187,7 +178,7 @@ io.on('connection', async (socket) => {
                     id: p.id,
                     name: p.name,
                     isMuted: p.isMuted(),
-                    isAudioEnabled: true
+                    isAudioEnabled: true // Добавляем начальное состояние аудио
                 }));
 
             // Get existing producers
@@ -210,24 +201,13 @@ io.on('connection', async (socket) => {
                 peerId: socket.id,
                 name: name,
                 isMuted: false,
-                isAudioEnabled: true
+                isAudioEnabled: true // Добавляем состояние аудио для нового пира
             });
 
-            // Send response with router capabilities
-            callback({
-                error: null,
-                routerRtpCapabilities: room.router.rtpCapabilities,
-                existingPeers,
-                existingProducers
-            });
-
-            console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
-            console.log('Existing peers:', existingPeers);
-            console.log('Existing producers:', existingProducers);
-
+            callback({ error: null, routerRtpCapabilities, existingPeers, existingProducers });
         } catch (error) {
             console.error('Error joining room:', error);
-            callback({ error: 'Failed to join room: ' + error.message });
+            callback({ error: 'Failed to join room' });
         }
     });
 
@@ -856,46 +836,39 @@ io.on('connection', async (socket) => {
     });
 
     socket.on('disconnect', () => {
-        try {
-            console.log('Client disconnected:', socket.id);
+        console.log('Client disconnected:', socket.id);
+        
+        const peer = peers.get(socket.id);
+        if (!peer) return;
 
-            const peer = peers.get(socket.id);
-            if (peer) {
-                const roomId = peer.roomId;
-                if (roomId) {
-                    // Notify other peers about disconnection
-                    socket.to(roomId).emit('peerLeft', {
-                        peerId: socket.id
-                    });
+        const room = rooms.get(socket.data?.roomId);
+        if (!room) return;
 
-                    // Clean up peer's producers
-                    peer.producers.forEach(producer => {
-                        producer.close();
-                        const room = rooms.get(roomId);
-                        if (room) {
-                            room.removeProducer(producer.id);
-                        }
-                    });
+        // Уведомляем о закрытии всех producers перед удалением пира
+        peer.producers.forEach((producer, producerId) => {
+            const mediaType = producer.appData?.mediaType || 'unknown';
+            io.to(room.id).emit('producerClosed', {
+                producerId,
+                producerSocketId: socket.id,
+                mediaType
+            });
+        });
 
-                    // Clean up peer's consumers
-                    peer.consumers.forEach(consumer => {
-                        consumer.close();
-                    });
+        // Close all transports, producers, and consumers
+        peer.close();
 
-                    // Clean up peer's transports
-                    peer.transports.forEach(transport => {
-                        transport.close();
-                    });
-                }
+        // Remove peer from room and peers map
+        room.removePeer(socket.id);
+        peers.delete(socket.id);
 
-                // Remove peer from peers map
-                peers.delete(socket.id);
+        // Notify other peers
+        socket.to(room.id).emit('peerLeft', {
+            peerId: socket.id
+        });
 
-                // Clean up socket data
-                socket.data = {};
-            }
-        } catch (error) {
-            console.error('Error in disconnect handler:', error);
+        // If room is empty, remove it
+        if (room.getPeers().size === 0) {
+            rooms.delete(room.id);
         }
     });
 });
