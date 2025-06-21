@@ -75,18 +75,25 @@ export class NoiseSuppressionManager {
 
       this.rnnWorkletNode = new RnnoiseWorkletNode(this.audioContext, {
         wasmBinary: this.wasmBinaries.rnnoise,
-        maxChannels: 2
+        maxChannels: 2,
+        vadOffset: 0.25,
+        gainOffset: -15,
+        enableVAD: true
       });
 
       this.speexWorkletNode = new SpeexWorkletNode(this.audioContext, {
         wasmBinary: this.wasmBinaries.speex,
-        maxChannels: 2
+        maxChannels: 2,
+        denoise: true,
+        aggressiveness: 15,
+        vadOffset: 1.5,
+        enableVAD: true
       });
 
       this.noiseGateNode = new NoiseGateWorkletNode(this.audioContext, {
-        openThreshold: -50,
-        closeThreshold: -60,
-        holdMs: 90,
+        openThreshold: -65,
+        closeThreshold: -70,
+        holdMs: 150,
         maxChannels: 2
       });
 
@@ -133,6 +140,12 @@ export class NoiseSuppressionManager {
         case 'noisegate':
           processingNode = this.noiseGateNode;
           break;
+        case 'combined':
+          this.sourceNode.connect(this.noiseGateNode);
+          this.noiseGateNode.connect(this.rnnWorkletNode);
+          this.rnnWorkletNode.connect(this.gainNode);
+          this.gainNode.connect(this.destinationNode);
+          return true;
         default:
           throw new Error('Invalid noise suppression mode');
       }
