@@ -99,7 +99,7 @@ export class NoiseSuppressionManager {
       });
 
       this.gainNode = this.audioContext.createGain();
-      this.gainNode.gain.value = 0.7;
+      this.gainNode.gain.value = 0.5;
 
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
