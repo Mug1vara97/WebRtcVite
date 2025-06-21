@@ -2643,8 +2643,12 @@ function App() {
           audioRef.current.set(producer.producerSocketId, audio);
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
-          // Start voice detection with producerId
-          detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
+          // Инициализируем определение голоса только после того, как consumer полностью готов
+          consumer.on('resumed', () => {
+            console.log('Consumer resumed, initializing voice detection');
+            detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
+          });
+
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
