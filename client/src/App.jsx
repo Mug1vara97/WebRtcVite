@@ -2258,16 +2258,16 @@ function App() {
     }
   };
 
-  const detectSpeaking = (analyser, peerId, threshold = -35) => {  // Увеличиваем порог с -50 до -35
+  const detectSpeaking = (analyser, peerId, threshold = -45) => {  // Увеличиваем чувствительность с -35 до -45
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Float32Array(bufferLength);
     let speakingStartTime = 0;
     let silenceStartTime = 0;
-    const SPEAKING_DELAY = 100;  // Увеличиваем задержку для более надежного определения речи
-    const SILENCE_DELAY = 300;   // Увеличиваем задержку тишины
+    const SPEAKING_DELAY = 50;   // Уменьшаем задержку для более быстрой реакции
+    const SILENCE_DELAY = 200;   // Уменьшаем задержку тишины
     let consecutiveSpeakingFrames = 0;
     let consecutiveSilentFrames = 0;
-    const FRAMES_THRESHOLD = 4;   // Увеличиваем количество кадров для более надежного определения
+    const FRAMES_THRESHOLD = 2;   // Уменьшаем порог для более быстрой реакции
     let lastSpeakingState = false;
     
     const checkAudioLevel = () => {
