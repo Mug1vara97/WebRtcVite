@@ -170,6 +170,9 @@ io.on('connection', async (socket) => {
                 throw new Error('Failed to initialize room');
             }
 
+            // Store roomId in socket data
+            socket.data = { ...socket.data, roomId };
+
             // Create peer
             const peer = new Peer(socket, roomId, name);
             peers.set(socket.id, peer);
@@ -853,39 +856,46 @@ io.on('connection', async (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
-        
-        const peer = peers.get(socket.id);
-        if (!peer) return;
+        try {
+            console.log('Client disconnected:', socket.id);
 
-        const room = rooms.get(socket.data?.roomId);
-        if (!room) return;
+            const peer = peers.get(socket.id);
+            if (peer) {
+                const roomId = peer.roomId;
+                if (roomId) {
+                    // Notify other peers about disconnection
+                    socket.to(roomId).emit('peerLeft', {
+                        peerId: socket.id
+                    });
 
-        // Уведомляем о закрытии всех producers перед удалением пира
-        peer.producers.forEach((producer, producerId) => {
-            const mediaType = producer.appData?.mediaType || 'unknown';
-            io.to(room.id).emit('producerClosed', {
-                producerId,
-                producerSocketId: socket.id,
-                mediaType
-            });
-        });
+                    // Clean up peer's producers
+                    peer.producers.forEach(producer => {
+                        producer.close();
+                        const room = rooms.get(roomId);
+                        if (room) {
+                            room.removeProducer(producer.id);
+                        }
+                    });
 
-        // Close all transports, producers, and consumers
-        peer.close();
+                    // Clean up peer's consumers
+                    peer.consumers.forEach(consumer => {
+                        consumer.close();
+                    });
 
-        // Remove peer from room and peers map
-        room.removePeer(socket.id);
-        peers.delete(socket.id);
+                    // Clean up peer's transports
+                    peer.transports.forEach(transport => {
+                        transport.close();
+                    });
+                }
 
-        // Notify other peers
-        socket.to(room.id).emit('peerLeft', {
-            peerId: socket.id
-        });
+                // Remove peer from peers map
+                peers.delete(socket.id);
 
-        // If room is empty, remove it
-        if (room.getPeers().size === 0) {
-            rooms.delete(room.id);
+                // Clean up socket data
+                socket.data = {};
+            }
+        } catch (error) {
+            console.error('Error in disconnect handler:', error);
         }
     });
 });
