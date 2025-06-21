@@ -155,20 +155,26 @@ io.on('connection', async (socket) => {
     socket.on('join', async ({ roomId, name }, callback) => {
         try {
             let room = rooms.get(roomId);
+            
+            // Если комната не существует, создаем новую
             if (!room) {
+                console.log('Creating new room:', roomId);
                 const worker = await getMediasoupWorker();
                 room = await createRoom(roomId, worker);
                 rooms.set(roomId, room);
+            } else {
+                console.log('Joining existing room:', roomId);
             }
 
-            // Get router RTP capabilities
-            const rtpCapabilities = room.router.rtpCapabilities;
+            if (!room || !room.router) {
+                throw new Error('Failed to initialize room');
+            }
 
             // Create peer
             const peer = new Peer(socket, roomId, name);
             peers.set(socket.id, peer);
 
-            // Join room
+            // Join socket.io room
             socket.join(roomId);
 
             // Get existing peers
@@ -178,7 +184,7 @@ io.on('connection', async (socket) => {
                     id: p.id,
                     name: p.name,
                     isMuted: p.isMuted(),
-                    isAudioEnabled: true // Добавляем начальное состояние аудио
+                    isAudioEnabled: true
                 }));
 
             // Get existing producers
@@ -201,13 +207,24 @@ io.on('connection', async (socket) => {
                 peerId: socket.id,
                 name: name,
                 isMuted: false,
-                isAudioEnabled: true // Добавляем состояние аудио для нового пира
+                isAudioEnabled: true
             });
 
-            callback({ error: null, routerRtpCapabilities, existingPeers, existingProducers });
+            // Send response with router capabilities
+            callback({
+                error: null,
+                routerRtpCapabilities: room.router.rtpCapabilities,
+                existingPeers,
+                existingProducers
+            });
+
+            console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
+            console.log('Existing peers:', existingPeers);
+            console.log('Existing producers:', existingProducers);
+
         } catch (error) {
             console.error('Error joining room:', error);
-            callback({ error: 'Failed to join room' });
+            callback({ error: 'Failed to join room: ' + error.message });
         }
     });
 
