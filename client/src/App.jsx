@@ -934,6 +934,7 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
+  const [audioDisabledPeers, setAudioDisabledPeers] = useState(new Map());
 
 
   const socketRef = useRef();
@@ -2712,7 +2713,35 @@ function App() {
         }
       }
     });
+
+    // Отправляем состояние на сервер
+    if (socketRef.current) {
+      socketRef.current.emit('audioDisabledStateChanged', { isAudioDisabled: !newState });
+    }
   }, [isAudioEnabled, volumes]);
+
+  // Add socket listener for audio disabled state
+  useEffect(() => {
+    if (socketRef.current) {
+      socketRef.current.on('peerAudioDisabledStateChanged', ({ peerId, isAudioDisabled }) => {
+        setAudioDisabledPeers(prev => {
+          const newStates = new Map(prev);
+          if (isAudioDisabled) {
+            newStates.set(peerId, true);
+          } else {
+            newStates.delete(peerId);
+          }
+          return newStates;
+        });
+      });
+    }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.off('peerAudioDisabledStateChanged');
+      }
+    };
+  }, []);
 
   if (!isJoined) {
     return (
@@ -2983,7 +3012,7 @@ function App() {
                       {volumes.get(peer.id) === 0 && (
                         <MicOff sx={{ ml: 1, width: 16, height: 16, color: 'red' }} />
                       )}
-                      {!isAudioEnabled && (
+                      {audioDisabledPeers.get(peer.id) && (
                         <HeadsetOff sx={{ ml: 1, width: 16, height: 16, color: 'red' }} />
                       )}
                     </Typography>

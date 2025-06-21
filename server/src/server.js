@@ -807,6 +807,15 @@ io.on('connection', async (socket) => {
         }
     });
 
+    // Add audio disabled state handling
+    socket.on('audioDisabledStateChanged', ({ isAudioDisabled }) => {
+        // Broadcast to all peers in the room except the sender
+        socket.to(socket.roomId).emit('peerAudioDisabledStateChanged', {
+            peerId: socket.id,
+            isAudioDisabled
+        });
+    });
+
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         
