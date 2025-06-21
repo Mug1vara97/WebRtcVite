@@ -898,6 +898,7 @@ function App() {
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [peers, setPeers] = useState(new Map());
   const [error, setError] = useState('');
   const [volumes, setVolumes] = useState(new Map());
@@ -999,7 +1000,7 @@ function App() {
         setRemoteScreens(prev => {
           const newScreens = new Map(prev);
           const screenEntry = [...newScreens.entries()].find(
-            ([_, data]) => data.producerId === producerId
+            ([id, data]) => data.producerId === producerId
           );
           
           if (screenEntry) {
@@ -1023,7 +1024,7 @@ function App() {
         setRemoteVideos(prev => {
           const newVideos = new Map(prev);
           const videoEntry = [...newVideos.entries()].find(
-            ([_, data]) => data.producerId === producerId
+            ([id, data]) => data.producerId === producerId
           );
           
           if (videoEntry) {
@@ -1041,7 +1042,7 @@ function App() {
 
               // Находим и закрываем соответствующий consumer
               const consumer = Array.from(consumersRef.current.entries()).find(
-                ([_, consumer]) => consumer.producerId === producerId
+                ([id, consumer]) => consumer.producerId === producerId
               );
               if (consumer) {
                 console.log('Found and closing associated consumer:', consumer[0]);
@@ -2675,6 +2676,24 @@ function App() {
     }
   };
 
+  // Add toggleAudio function
+  const toggleAudio = useCallback(() => {
+    const newState = !isAudioEnabled;
+    setIsAudioEnabled(newState);
+
+    // Отключаем/включаем все аудио элементы
+    audioRef.current.forEach((peerAudio) => {
+      if (peerAudio instanceof HTMLAudioElement) {
+        peerAudio.muted = !newState;
+      } else if (peerAudio instanceof Map) {
+        const gainNode = gainNodesRef.current.get(peerAudio.id);
+        if (gainNode) {
+          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
+        }
+      }
+    });
+  }, [isAudioEnabled, volumes]);
+
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -2943,6 +2962,13 @@ function App() {
                 title={isVideoEnabled ? "Stop camera" : "Start camera"}
               >
                 {isVideoEnabled ? <VideocamOff /> : <Videocam />}
+              </IconButton>
+              <IconButton
+                sx={styles.iconButton}
+                onClick={toggleAudio}
+                title={isAudioEnabled ? "Disable audio output" : "Enable audio output"}
+              >
+                {isAudioEnabled ? <VolumeUp /> : <VolumeOff />}
               </IconButton>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <IconButton
