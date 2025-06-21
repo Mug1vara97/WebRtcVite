@@ -2777,90 +2777,106 @@ function App() {
         <Container sx={styles.container}>
           <Box sx={styles.videoGrid}>
             {/* Local user */}
-            <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
-              {isVideoEnabled && videoStream ? (
-                <VideoView 
-                  stream={videoStream} 
-                  peerName={userName}
-                  isMuted={isMuted}
-                  isSpeaking={speakingStates.get(socketRef.current?.id)}
-                >
-                  <IconButton
-                    onClick={handleMute}
-                    sx={{
-                      ...styles.micIcon,
-                      ...(isMuted && styles.mutedMicIcon),
-                      ...(!isMuted && (
-                        speakingStates.get(socketRef.current?.id) 
-                          ? styles.speakingMicIcon 
-                          : styles.silentMicIcon
-                      ))
-                    }}
+            <Box sx={styles.videoContainer}>
+              <Box sx={styles.videoWrapper}>
+                {isVideoEnabled && videoStream ? (
+                  <VideoView 
+                    stream={videoStream} 
+                    peerName={userName}
+                    isMuted={isMuted}
+                    isSpeaking={speakingStates.get(socketRef.current?.id)}
                   >
-                    {isMuted ? <MicOff /> : <Mic />}
-                  </IconButton>
-                  <MuteIndicator peerId={socketRef.current?.id} />
-                </VideoView>
-              ) : (
-                <div style={{ 
-                  position: 'relative', 
-                  width: '100%', 
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center'
-                }}>
-                  <Box sx={styles.userAvatar}>
-                    {userName[0].toUpperCase()}
-                  </Box>
-                  <Box sx={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    padding: '12px',
-                    background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
+                    <IconButton
+                      onClick={handleMute}
+                      sx={{
+                        ...styles.micIcon,
+                        ...(isMuted && styles.mutedMicIcon),
+                        ...(!isMuted && (
+                          speakingStates.get(socketRef.current?.id) 
+                            ? styles.speakingMicIcon 
+                            : styles.silentMicIcon
+                        ))
+                      }}
+                    >
+                      {isMuted ? <MicOff /> : <Mic />}
+                    </IconButton>
+                    <MuteIndicator peerId={socketRef.current?.id} />
+                  </VideoView>
+                ) : (
+                  <div style={{ 
+                    position: 'relative', 
+                    width: '100%', 
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    alignItems: 'center'
                   }}>
-                    <Box sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      color: '#ffffff',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      width: 'fit-content'
-                    }}>
-                      {isMuted ? (
-                        <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                      ) : speakingStates.get(socketRef.current?.id) ? (
-                        <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
-                      ) : (
-                        <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
-                      )}
-                      {userName}
+                    <Box sx={styles.userAvatar}>
+                      {userName[0].toUpperCase()}
                     </Box>
-                  </Box>
-                  <IconButton
-                    onClick={handleMute}
-                    sx={{
-                      ...styles.micIcon,
-                      ...(isMuted && styles.mutedMicIcon),
-                      ...(!isMuted && (
-                        speakingStates.get(socketRef.current?.id) 
-                          ? styles.speakingMicIcon 
-                          : styles.silentMicIcon
-                      ))
-                    }}
-                  >
-                    {isMuted ? <MicOff /> : <Mic />}
-                  </IconButton>
-                  <MuteIndicator peerId={socketRef.current?.id} />
-                </div>
-              )}
+                    <Box sx={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: '12px',
+                      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
+                    }}>
+                      <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: '#ffffff',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        width: 'fit-content'
+                      }}>
+                        {isMuted ? (
+                          <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                        ) : speakingStates.get(socketRef.current?.id) ? (
+                          <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
+                        ) : (
+                          <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
+                        )}
+                        {userName}
+                      </Box>
+                    </Box>
+                    <IconButton
+                      onClick={handleMute}
+                      sx={{
+                        ...styles.micIcon,
+                        ...(isMuted && styles.mutedMicIcon),
+                        ...(!isMuted && (
+                          speakingStates.get(socketRef.current?.id) 
+                            ? styles.speakingMicIcon 
+                            : styles.silentMicIcon
+                        ))
+                      }}
+                    >
+                      {isMuted ? <MicOff /> : <Mic />}
+                    </IconButton>
+                    <MuteIndicator peerId={socketRef.current?.id} />
+                  </div>
+                )}
+                <Box sx={styles.userInfo}>
+                  <Typography variant="body2">
+                    {userName} (You)
+                    {speakingStates.get(socketRef.current?.id) && !isMuted && (
+                      <Mic sx={{ ml: 1, width: 16, height: 16, color: 'green' }} />
+                    )}
+                    {isMuted && (
+                      <MicOff sx={{ ml: 1, width: 16, height: 16, color: 'red' }} />
+                    )}
+                    {!isAudioEnabled && (
+                      <HeadsetOff sx={{ ml: 1, width: 16, height: 16, color: 'red' }} />
+                    )}
+                  </Typography>
+                </Box>
+              </Box>
             </Box>
 
             {/* Remote users */}
