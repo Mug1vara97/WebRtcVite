@@ -2258,111 +2258,77 @@ function App() {
     }
   };
 
-  const detectSpeaking = (analyser, peerId, threshold = -50) => {  // Увеличиваем чувствительность с -35 до -45
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Float32Array(bufferLength);
-    let speakingStartTime = 0;
-    let silenceStartTime = 0;
-    const SPEAKING_DELAY = 50;   // Уменьшаем задержку для более быстрой реакции
-    const SILENCE_DELAY = 200;   // Уменьшаем задержку тишины
-    let consecutiveSpeakingFrames = 0;
-    let consecutiveSilentFrames = 0;
-    const FRAMES_THRESHOLD = 4;   // Уменьшаем порог для более быстрой реакции
-    let lastSpeakingState = false;
-    
-    const checkAudioLevel = () => {
-      try {
-      // Handle mute states first
-      if ((peerId === socketRef.current?.id && isMuted) || 
-          (peerId !== socketRef.current?.id && (volumes.get(peerId) || 100) === 0)) {
-        if (speakingStates.get(peerId)) {
-          setSpeakingStates(prev => {
-            const newStates = new Map(prev);
-            newStates.set(peerId, false);
-            return newStates;
-          });
-          if (socketRef.current && peerId === socketRef.current.id) {
-            socketRef.current.emit('speaking', { speaking: false });
-          }
-        }
-          const frameId = requestAnimationFrame(checkAudioLevel);
-        animationFramesRef.current.set(peerId, frameId);
+  const detectSpeaking = async (analyser, peerId) => {
+    try {
+      // Создаем и подключаем воркер для определения голоса
+      if (!audioContextRef.current.audioWorklet) {
+        console.error('AudioWorklet не поддерживается');
         return;
       }
 
-        // Get time domain data
-      analyser.getFloatTimeDomainData(dataArray);
+      await audioContextRef.current.audioWorklet.addModule('/src/utils/voiceDetector.worklet.js');
       
-        // Calculate RMS value
-      let rms = 0;
-      for (let i = 0; i < bufferLength; i++) {
-          rms += dataArray[i] * dataArray[i];
-      }
-      rms = Math.sqrt(rms / bufferLength);
-
-        // Convert to dB
-        const db = 20 * Math.log10(rms);
-        
-        // Determine if speaking based on volume threshold
-        const isSpeakingNow = db > threshold;
-
-      const now = Date.now();
-
-        // Update speaking state with reduced delays
-      if (isSpeakingNow) {
-        consecutiveSpeakingFrames++;
-        consecutiveSilentFrames = 0;
-        
-        if (!speakingStartTime && consecutiveSpeakingFrames >= FRAMES_THRESHOLD) {
-          speakingStartTime = now;
-          silenceStartTime = 0;
-        }
-      } else {
-        consecutiveSpeakingFrames = 0;
-        consecutiveSilentFrames++;
-        
-        if (!silenceStartTime && consecutiveSilentFrames >= FRAMES_THRESHOLD) {
-          silenceStartTime = now;
-          speakingStartTime = 0;
+      const voiceDetectorNode = new AudioWorkletNode(audioContextRef.current, 'voice-detector');
+      
+      // Отключаем старые соединения
+      analyser.disconnect();
+      
+      // Создаем новую цепочку обработки
+      const source = audioContextRef.current.createMediaStreamSource(
+        peerId === socketRef.current?.id ? 
+        (noiseSuppressionRef.current?.getProcessedStream() || localStreamRef.current) : 
+        new MediaStream([consumersRef.current.get([...consumersRef.current.keys()].find(id => 
+          consumersRef.current.get(id).appData?.peerId === peerId
+        ))?.track])
+      );
+      
+      source.connect(voiceDetectorNode);
+      
+      // Если это не локальный пользователь, подключаем к выходу
+      if (peerId !== socketRef.current?.id) {
+        const gainNode = gainNodesRef.current.get(peerId);
+        if (gainNode) {
+          voiceDetectorNode.connect(gainNode);
+          gainNode.connect(audioContextRef.current.destination);
         }
       }
 
-        // Update state with hysteresis
-      let shouldBeSpeeking = lastSpeakingState;
-      
-      if (speakingStartTime && (now - speakingStartTime) > SPEAKING_DELAY) {
-        shouldBeSpeeking = true;
-      } else if (silenceStartTime && (now - silenceStartTime) > SILENCE_DELAY) {
-        shouldBeSpeeking = false;
-      }
-
-      // Update state only if it changed
-      if (shouldBeSpeeking !== lastSpeakingState) {
-        lastSpeakingState = shouldBeSpeeking;
+      // Обрабатываем сообщения от воркера
+      voiceDetectorNode.port.onmessage = (event) => {
+        const { speaking } = event.data;
         
+        // Проверяем состояние мьюта
+        if ((peerId === socketRef.current?.id && isMuted) || 
+            (peerId !== socketRef.current?.id && (volumes.get(peerId) || 100) === 0)) {
+          if (speakingStates.get(peerId)) {
+            setSpeakingStates(prev => {
+              const newStates = new Map(prev);
+              newStates.set(peerId, false);
+              return newStates;
+            });
+            if (socketRef.current && peerId === socketRef.current.id) {
+              socketRef.current.emit('speaking', { speaking: false });
+            }
+          }
+          return;
+        }
+
+        // Обновляем состояние говорения
         setSpeakingStates(prev => {
           const newStates = new Map(prev);
-          newStates.set(peerId, shouldBeSpeeking);
+          newStates.set(peerId, speaking);
           return newStates;
         });
         
+        // Отправляем состояние на сервер только для локального пользователя
         if (socketRef.current && peerId === socketRef.current.id) {
-          socketRef.current.emit('speaking', { speaking: shouldBeSpeeking });
+          socketRef.current.emit('speaking', { speaking });
         }
+      };
 
-          // Log state changes for debugging
-          console.log(`Speaking state changed for ${peerId}:`, shouldBeSpeeking, 'dB:', db);
-        }
-      } catch (error) {
-        console.error('Error in checkAudioLevel:', error);
-      }
-      
-      // Continue monitoring
-      const frameId = requestAnimationFrame(checkAudioLevel);
-      animationFramesRef.current.set(peerId, frameId);
-    };
-    
-    checkAudioLevel();
+    } catch (error) {
+      console.error('Error in voice detection:', error);
+    }
   };
 
   // Update analyzer settings when creating audio nodes

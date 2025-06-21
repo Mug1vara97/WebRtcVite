@@ -198,7 +198,7 @@ export class NoiseSuppressionManager {
       this.currentMode = null;
 
       if (this.producer) {
-        const newTrack = this.originalStream.getAudioTracks()[0];
+        const newTrack = this.destinationNode.stream.getAudioTracks()[0];
         await this.producer.replaceTrack({ track: newTrack });
       }
 
