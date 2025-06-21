@@ -2308,15 +2308,31 @@ function App() {
         stream = noiseSuppressionRef.current?.getProcessedStream() || localStreamRef.current;
         console.log('Using local stream for voice detection');
       } else {
-        const consumer = [...consumersRef.current.values()].find(c => 
-          c.appData?.peerId === peerId && c.kind === 'audio'
-        );
-        if (!consumer) {
-          console.error('No consumer found for peer:', peerId);
+        // Добавляем механизм повторных попыток для получения consumer'а
+        let retries = 0;
+        const maxRetries = 5;
+        const retryDelay = 1000; // 1 секунда между попытками
+
+        while (retries < maxRetries) {
+          const consumer = [...consumersRef.current.values()].find(c => 
+            c.appData?.peerId === peerId && c.kind === 'audio'
+          );
+          
+          if (consumer) {
+            stream = new MediaStream([consumer.track]);
+            console.log('Found consumer and created stream for peer:', peerId);
+            break;
+          }
+
+          console.log(`Attempt ${retries + 1}/${maxRetries} to get consumer for peer:`, peerId);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          retries++;
+        }
+
+        if (!stream) {
+          console.error(`Failed to get consumer for peer ${peerId} after ${maxRetries} attempts`);
           return;
         }
-        stream = new MediaStream([consumer.track]);
-        console.log('Using remote stream for voice detection');
       }
 
       if (!stream) {
@@ -2327,8 +2343,8 @@ function App() {
       // Отключаем старые соединения
       analyser.disconnect();
       console.log('Disconnected old analyzer');
-      
-      // Создаем источник из потока
+
+      // Создаем новый источник из потока
       const source = audioContextRef.current.createMediaStreamSource(stream);
       console.log('Created media stream source');
 
