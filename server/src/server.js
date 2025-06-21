@@ -809,6 +809,12 @@ io.on('connection', async (socket) => {
 
     // Update audio disabled state handling
     socket.on('audioDisabledStateChanged', ({ isAudioDisabled }) => {
+        console.log('Received audioDisabledStateChanged event:', { 
+            socketId: socket.id, 
+            roomId: socket.data?.roomId, 
+            isAudioDisabled 
+        });
+
         if (!socket.data?.roomId) {
             console.error('Room ID not found for socket:', socket.id);
             return;
@@ -830,8 +836,14 @@ io.on('connection', async (socket) => {
         peer.setAudioDisabled(isAudioDisabled);
         room.setPeerAudioDisabledState(socket.id, isAudioDisabled);
 
-        // Broadcast to all peers in the room except the sender
-        socket.to(socket.data.roomId).emit('peerAudioDisabledStateChanged', {
+        console.log('Broadcasting audio disabled state:', {
+            roomId: socket.data.roomId,
+            peerId: socket.id,
+            isAudioDisabled
+        });
+
+        // Broadcast to all peers in the room including the sender
+        io.to(socket.data.roomId).emit('peerAudioDisabledStateChanged', {
             peerId: socket.id,
             isAudioDisabled
         });
