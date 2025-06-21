@@ -26,10 +26,7 @@ export class NoiseSuppressionManager {
     this.originalStream = null;
     this.processedStream = null;
     this._isInitialized = false;
-    this.wasmBinaries = {
-      speex: null,
-      rnnoise: null
-    };
+    this.wasmBinaries = null;
   }
 
   async initialize(stream) {
@@ -57,8 +54,10 @@ export class NoiseSuppressionManager {
         })
       ]);
 
-      this.wasmBinaries.speex = speexWasmBinary;
-      this.wasmBinaries.rnnoise = rnnoiseWasmBinary;
+      this.wasmBinaries = {
+        speex: speexWasmBinary,
+        rnnoise: rnnoiseWasmBinary
+      };
 
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
 
@@ -242,10 +241,7 @@ export class NoiseSuppressionManager {
       this.originalStream = null;
       this.processedStream = null;
       this._isInitialized = false;
-      this.wasmBinaries = {
-        speex: null,
-        rnnoise: null
-      };
+      this.wasmBinaries = null;
     } catch (error) {
       console.error('Error during cleanup:', error);
     }
@@ -254,4 +250,6 @@ export class NoiseSuppressionManager {
   getCurrentMode() {
     return this.currentMode;
   }
-} 
+}
+
+export const noiseSuppression = new NoiseSuppressionManager(); 

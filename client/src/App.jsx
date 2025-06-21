@@ -1776,30 +1776,26 @@ function App() {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 2,
+          channelCount: 1,
           sampleRate: 48000
         }
       });
 
       console.log('Got media stream:', stream);
+      console.log('Audio tracks:', stream.getAudioTracks());
       console.log('Audio track settings:', stream.getAudioTracks()[0].getSettings());
 
-      localStreamRef.current = stream;
-      
       // Initialize noise suppression
-      if (!noiseSuppressionRef.current) {
-        noiseSuppressionRef.current = new noiseSuppression();
-      }
+      await noiseSuppression.initialize(audioContextRef.current);
       
-      const initResult = await noiseSuppressionRef.current.initialize(stream);
-      if (initResult && isNoiseSuppressed) {
-        await noiseSuppressionRef.current.enable(noiseSuppressionMode);
-      }
-
-      // Get the processed stream for the producer
-      const processedStream = noiseSuppressionRef.current.getProcessedStream();
+      // Process the stream
+      const processedStream = await noiseSuppression.processStream(stream);
+      console.log('Processed stream:', processedStream);
+      console.log('Processed audio tracks:', processedStream.getAudioTracks());
+      
+      localStreamRef.current = processedStream;
+      
       const track = processedStream.getAudioTracks()[0];
-      
       if (!track) {
         throw new Error('No audio track in processed stream');
       }
@@ -1830,7 +1826,7 @@ function App() {
       const producer = await producerTransportRef.current.produce({ 
         track,
         codecOptions: {
-          opusStereo: true,
+          opusStereo: false,
           opusDtx: true,
           opusFec: true,
           opusNack: true
@@ -1842,11 +1838,6 @@ function App() {
       
       console.log('Audio producer created:', producer.id);
       producersRef.current.set(producer.id, producer);
-
-      // Set producer in noise suppression manager
-      if (noiseSuppressionRef.current) {
-        noiseSuppressionRef.current.setProducer(producer);
-      }
 
       // Monitor producer state
       producer.on('transportclose', () => {
@@ -1860,6 +1851,9 @@ function App() {
         producer.close();
         producersRef.current.delete(producer.id);
       });
+
+      // Update noise suppression status
+      setIsNoiseSuppressed(true);
 
       return producer;
     } catch (error) {
