@@ -912,36 +912,34 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
-  const voiceWorkerRef = useRef(null);
+  const voiceProcessorRef = useRef(null);
 
-  // Add service worker registration
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/voice-worker.js')
-        .then(registration => {
-          console.log('Voice detection service worker registered:', registration);
-          voiceWorkerRef.current = registration.active;
-          
-          // Listen for messages from service worker
-          navigator.serviceWorker.addEventListener('message', (event) => {
-            const { type, data } = event.data;
-            if (type === 'VOICE_STATE') {
-              const { peerId, isSpeaking } = data;
-              setSpeakingStates(prev => {
-                const newStates = new Map(prev);
-                newStates.set(peerId, isSpeaking);
-                return newStates;
-              });
-              
-              if (socketRef.current && peerId === socketRef.current.id) {
-                socketRef.current.emit('speaking', { speaking: isSpeaking });
-              }
-            }
-          });
-        })
-        .catch(error => console.error('Service worker registration failed:', error));
+    // Initialize audio context with high priority
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 48000,
+        latencyHint: 'interactive'
+      });
     }
+
+    // Keep audio context running in background
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        // When page becomes hidden, ensure audio context stays running
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
+
+
 
 const socketRef = useRef();
   const deviceRef = useRef();
@@ -2343,8 +2341,19 @@ const socketRef = useRef();
   const detectSpeaking = (analyser, peerId, threshold = -50) => {
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Float32Array(bufferLength);
-    
-    const checkAudioLevel = () => {
+    let speakingStartTime = 0;
+    let silenceStartTime = 0;
+    const SPEAKING_DELAY = 50;
+    const SILENCE_DELAY = 200;
+    let consecutiveSpeakingFrames = 0;
+    let consecutiveSilentFrames = 0;
+    const FRAMES_THRESHOLD = 4;
+    let lastSpeakingState = false;
+    let isProcessing = true;
+
+    const processAudioData = () => {
+      if (!isProcessing) return;
+
       try {
         // Handle mute states first
         if ((peerId === socketRef.current?.id && isMuted) || 
