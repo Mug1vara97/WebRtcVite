@@ -911,9 +911,9 @@ function App() {
   const [isNoiseSuppressed, setIsNoiseSuppressed] = useState(false);
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
+  const [isBackgroundMode, setIsBackgroundMode] = useState(false);
+
   const noiseSuppressionRef = useRef(null);
-
-
   const socketRef = useRef();
   const deviceRef = useRef();
   const producerTransportRef = useRef();
@@ -926,6 +926,107 @@ function App() {
   const gainNodesRef = useRef(new Map());
   const analyserNodesRef = useRef(new Map());
   const animationFramesRef = useRef(new Map());
+  const keepAliveIntervalRef = useRef();
+
+  // Add page visibility handling
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isHidden = document.hidden;
+      setIsBackgroundMode(isHidden);
+      
+      if (isHidden) {
+        console.log('App went to background');
+        // Stop video tracks to save resources
+        if (videoStream) {
+          videoStream.getVideoTracks().forEach(track => {
+            track.enabled = false;
+          });
+        }
+        if (screenStream) {
+          screenStream.getVideoTracks().forEach(track => {
+            track.enabled = false;
+          });
+        }
+        
+        // Start keep-alive ping for WebSocket
+        if (socketRef.current && !keepAliveIntervalRef.current) {
+          keepAliveIntervalRef.current = setInterval(() => {
+            if (socketRef.current?.connected) {
+              socketRef.current.emit('keepalive');
+            }
+          }, 20000); // Send keepalive every 20 seconds
+        }
+      } else {
+        console.log('App returned to foreground');
+        // Resume video tracks
+        if (videoStream && isVideoEnabled) {
+          videoStream.getVideoTracks().forEach(track => {
+            track.enabled = true;
+          });
+        }
+        if (screenStream && isScreenSharing) {
+          screenStream.getVideoTracks().forEach(track => {
+            track.enabled = true;
+          });
+        }
+        
+        // Clear keep-alive interval
+        if (keepAliveIntervalRef.current) {
+          clearInterval(keepAliveIntervalRef.current);
+          keepAliveIntervalRef.current = null;
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Initial check
+    handleVisibilityChange();
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (keepAliveIntervalRef.current) {
+        clearInterval(keepAliveIntervalRef.current);
+      }
+    };
+  }, [videoStream, screenStream, isVideoEnabled, isScreenSharing]);
+
+  // Ensure AudioContext stays active
+  useEffect(() => {
+    const resumeAudioContext = async () => {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        try {
+          await audioContextRef.current.resume();
+          console.log('AudioContext resumed successfully');
+        } catch (error) {
+          console.error('Failed to resume AudioContext:', error);
+        }
+      }
+    };
+
+    // Resume on visibility change
+    const handleVisibilityChange = async () => {
+      if (!document.hidden && audioContextRef.current) {
+        await resumeAudioContext();
+      }
+    };
+
+    // Resume on focus
+    const handleFocus = async () => {
+      await resumeAudioContext();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    // Initial resume attempt
+    resumeAudioContext();
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   useEffect(() => {
     const resumeAudioContext = async () => {
@@ -2258,47 +2359,57 @@ function App() {
     }
   };
 
-  const detectSpeaking = (analyser, peerId, threshold = -50) => {  // Увеличиваем чувствительность с -35 до -45
+  const detectSpeaking = (analyser, peerId, threshold = -50) => {
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Float32Array(bufferLength);
     let speakingStartTime = 0;
     let silenceStartTime = 0;
-    const SPEAKING_DELAY = 50;   // Уменьшаем задержку для более быстрой реакции
-    const SILENCE_DELAY = 200;   // Уменьшаем задержку тишины
+    const SPEAKING_DELAY = 50;
+    const SILENCE_DELAY = 200;
     let consecutiveSpeakingFrames = 0;
     let consecutiveSilentFrames = 0;
-    const FRAMES_THRESHOLD = 4;   // Уменьшаем порог для более быстрой реакции
+    const FRAMES_THRESHOLD = 4;
     let lastSpeakingState = false;
+    let lastCheckTime = Date.now();
     
     const checkAudioLevel = () => {
       try {
-      // Handle mute states first
-      if ((peerId === socketRef.current?.id && isMuted) || 
-          (peerId !== socketRef.current?.id && (volumes.get(peerId) || 100) === 0)) {
-        if (speakingStates.get(peerId)) {
-          setSpeakingStates(prev => {
-            const newStates = new Map(prev);
-            newStates.set(peerId, false);
-            return newStates;
-          });
-          if (socketRef.current && peerId === socketRef.current.id) {
-            socketRef.current.emit('speaking', { speaking: false });
+        // Handle mute states first
+        if ((peerId === socketRef.current?.id && isMuted) || 
+            (peerId !== socketRef.current?.id && (volumes.get(peerId) || 100) === 0)) {
+          if (speakingStates.get(peerId)) {
+            setSpeakingStates(prev => {
+              const newStates = new Map(prev);
+              newStates.set(peerId, false);
+              return newStates;
+            });
+            if (socketRef.current && peerId === socketRef.current.id) {
+              socketRef.current.emit('speaking', { speaking: false });
+            }
           }
-        }
           const frameId = requestAnimationFrame(checkAudioLevel);
-        animationFramesRef.current.set(peerId, frameId);
-        return;
-      }
+          animationFramesRef.current.set(peerId, frameId);
+          return;
+        }
+
+        // Throttle checks in background mode
+        const now = Date.now();
+        if (isBackgroundMode && (now - lastCheckTime) < 100) {
+          const frameId = requestAnimationFrame(checkAudioLevel);
+          animationFramesRef.current.set(peerId, frameId);
+          return;
+        }
+        lastCheckTime = now;
 
         // Get time domain data
-      analyser.getFloatTimeDomainData(dataArray);
-      
+        analyser.getFloatTimeDomainData(dataArray);
+        
         // Calculate RMS value
-      let rms = 0;
-      for (let i = 0; i < bufferLength; i++) {
+        let rms = 0;
+        for (let i = 0; i < bufferLength; i++) {
           rms += dataArray[i] * dataArray[i];
-      }
-      rms = Math.sqrt(rms / bufferLength);
+        }
+        rms = Math.sqrt(rms / bufferLength);
 
         // Convert to dB
         const db = 20 * Math.log10(rms);
@@ -2306,58 +2417,53 @@ function App() {
         // Determine if speaking based on volume threshold
         const isSpeakingNow = db > threshold;
 
-      const now = Date.now();
-
         // Update speaking state with reduced delays
-      if (isSpeakingNow) {
-        consecutiveSpeakingFrames++;
-        consecutiveSilentFrames = 0;
-        
-        if (!speakingStartTime && consecutiveSpeakingFrames >= FRAMES_THRESHOLD) {
-          speakingStartTime = now;
-          silenceStartTime = 0;
+        if (isSpeakingNow) {
+          consecutiveSpeakingFrames++;
+          consecutiveSilentFrames = 0;
+          
+          if (!speakingStartTime && consecutiveSpeakingFrames >= FRAMES_THRESHOLD) {
+            speakingStartTime = now;
+            silenceStartTime = 0;
+          }
+        } else {
+          consecutiveSpeakingFrames = 0;
+          consecutiveSilentFrames++;
+          
+          if (!silenceStartTime && consecutiveSilentFrames >= FRAMES_THRESHOLD) {
+            silenceStartTime = now;
+            speakingStartTime = 0;
+          }
         }
-      } else {
-        consecutiveSpeakingFrames = 0;
-        consecutiveSilentFrames++;
-        
-        if (!silenceStartTime && consecutiveSilentFrames >= FRAMES_THRESHOLD) {
-          silenceStartTime = now;
-          speakingStartTime = 0;
-        }
-      }
 
         // Update state with hysteresis
-      let shouldBeSpeeking = lastSpeakingState;
-      
-      if (speakingStartTime && (now - speakingStartTime) > SPEAKING_DELAY) {
-        shouldBeSpeeking = true;
-      } else if (silenceStartTime && (now - silenceStartTime) > SILENCE_DELAY) {
-        shouldBeSpeeking = false;
-      }
-
-      // Update state only if it changed
-      if (shouldBeSpeeking !== lastSpeakingState) {
-        lastSpeakingState = shouldBeSpeeking;
+        let shouldBeSpeeking = lastSpeakingState;
         
-        setSpeakingStates(prev => {
-          const newStates = new Map(prev);
-          newStates.set(peerId, shouldBeSpeeking);
-          return newStates;
-        });
-        
-        if (socketRef.current && peerId === socketRef.current.id) {
-          socketRef.current.emit('speaking', { speaking: shouldBeSpeeking });
+        if (speakingStartTime && (now - speakingStartTime) > SPEAKING_DELAY) {
+          shouldBeSpeeking = true;
+        } else if (silenceStartTime && (now - silenceStartTime) > SILENCE_DELAY) {
+          shouldBeSpeeking = false;
         }
 
-          // Log state changes for debugging
-          console.log(`Speaking state changed for ${peerId}:`, shouldBeSpeeking, 'dB:', db);
+        // Update state only if it changed
+        if (shouldBeSpeeking !== lastSpeakingState) {
+          lastSpeakingState = shouldBeSpeeking;
+          
+          setSpeakingStates(prev => {
+            const newStates = new Map(prev);
+            newStates.set(peerId, shouldBeSpeeking);
+            return newStates;
+          });
+          
+          if (socketRef.current && peerId === socketRef.current.id) {
+            socketRef.current.emit('speaking', { speaking: shouldBeSpeeking });
+          }
         }
       } catch (error) {
         console.error('Error in checkAudioLevel:', error);
       }
       
-      // Continue monitoring
+      // Continue monitoring with appropriate timing
       const frameId = requestAnimationFrame(checkAudioLevel);
       animationFramesRef.current.set(peerId, frameId);
     };
