@@ -36,7 +36,8 @@ import {
   Hearing,
   NoiseAware,
   NoiseControlOff,
-  ExpandMore
+  ExpandMore,
+  HeadsetOff
 } from '@mui/icons-material';
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
@@ -904,6 +905,7 @@ function App() {
   const [volumes, setVolumes] = useState(new Map());
   const [isJoining, setIsJoining] = useState(false);
   const [speakingStates, setSpeakingStates] = useState(new Map());
+  const [audioStates, setAudioStates] = useState(new Map()); // Состояния аудио для всех пиров
   const [screenProducer, setScreenProducer] = useState(null);
   const [screenStream, setScreenStream] = useState(null);
   const [remoteScreens, setRemoteScreens] = useState(new Map());
@@ -1089,6 +1091,24 @@ function App() {
       socket.off('peerMuteStateChanged');
     };
   }, [socketRef.current]); // Зависим только от socketRef.current
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    // Add audio state change handler
+    socket.on('peerAudioStateChanged', ({ peerId, isEnabled }) => {
+      setAudioStates(prev => {
+        const newStates = new Map(prev);
+        newStates.set(peerId, isEnabled);
+        return newStates;
+      });
+    });
+
+    return () => {
+      socket.off('peerAudioStateChanged');
+    };
+  }, [socketRef.current]);
 
   const cleanup = () => {
     try {
@@ -2676,10 +2696,15 @@ function App() {
     }
   };
 
-  // Add toggleAudio function
+  // Update toggleAudio function
   const toggleAudio = useCallback(() => {
     const newState = !isAudioEnabled;
     setIsAudioEnabled(newState);
+
+    // Emit audio state change
+    if (socketRef.current) {
+      socketRef.current.emit('audioState', { isEnabled: newState });
+    }
 
     // Отключаем/включаем все аудио элементы
     audioRef.current.forEach((peerAudio) => {
@@ -2693,6 +2718,13 @@ function App() {
       }
     });
   }, [isAudioEnabled, volumes]);
+
+  // Add initial audio state when joining
+  useEffect(() => {
+    if (isJoined && socketRef.current) {
+      socketRef.current.emit('audioState', { isEnabled: isAudioEnabled });
+    }
+  }, [isJoined, isAudioEnabled]);
 
   if (!isJoined) {
     return (
@@ -2822,6 +2854,9 @@ function App() {
                         <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
                       )}
                       {userName}
+                      {!isAudioEnabled && (
+                        <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                      )}
                     </Box>
                   </Box>
                   <IconButton
@@ -2853,6 +2888,30 @@ function App() {
                     isMuted={peer.isMuted}
                     isSpeaking={speakingStates.get(peer.id)}
                   >
+                    <Box sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      width: 'fit-content'
+                    }}>
+                      {peer.isMuted ? (
+                        <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                      ) : speakingStates.get(peer.id) ? (
+                        <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
+                      ) : (
+                        <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
+                      )}
+                      {peer.name}
+                      {!audioStates.get(peer.id) && (
+                        <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                      )}
+                    </Box>
                     <IconButton
                       onClick={() => handlePeerMute(peer.id)}
                       className={`volumeControl ${
@@ -2914,6 +2973,9 @@ function App() {
                           <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
                         )}
                         {peer.name}
+                        {!audioStates.get(peer.id) && (
+                          <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                        )}
                       </Box>
                     </Box>
                     <IconButton

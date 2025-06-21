@@ -821,6 +821,18 @@ io.on('connection', async (socket) => {
         });
     });
 
+    // Add audio state handling
+    socket.on('audioState', ({ isEnabled }) => {
+        const peer = peers.get(socket.id);
+        if (peer) {
+            // Broadcast to all peers in the room except sender
+            socket.to(peer.roomId).emit('peerAudioStateChanged', {
+                peerId: socket.id,
+                isEnabled
+            });
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         
