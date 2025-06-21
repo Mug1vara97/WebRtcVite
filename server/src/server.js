@@ -809,8 +809,13 @@ io.on('connection', async (socket) => {
 
     // Add audio disabled state handling
     socket.on('audioDisabledStateChanged', ({ isAudioDisabled }) => {
+        if (!socket.data?.roomId) {
+            console.error('Room ID not found for socket:', socket.id);
+            return;
+        }
+
         // Broadcast to all peers in the room except the sender
-        socket.to(socket.roomId).emit('peerAudioDisabledStateChanged', {
+        socket.to(socket.data.roomId).emit('peerAudioDisabledStateChanged', {
             peerId: socket.id,
             isAudioDisabled
         });

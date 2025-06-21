@@ -2703,13 +2703,16 @@ function App() {
     setIsAudioEnabled(newState);
 
     // Отключаем/включаем все аудио элементы
-    audioRef.current.forEach((peerAudio) => {
+    audioRef.current.forEach((peerAudio, peerId) => {
+      // Пропускаем собственный аудио элемент
+      if (peerId === socketRef.current?.id) return;
+
       if (peerAudio instanceof HTMLAudioElement) {
         peerAudio.muted = !newState;
       } else if (peerAudio instanceof Map) {
-        const gainNode = gainNodesRef.current.get(peerAudio.id);
+        const gainNode = gainNodesRef.current.get(peerId);
         if (gainNode) {
-          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
+          gainNode.gain.value = newState ? (volumes.get(peerId) || 100) / 100 : 0;
         }
       }
     });
@@ -2723,6 +2726,7 @@ function App() {
   // Add socket listener for audio disabled state
   useEffect(() => {
     if (socketRef.current) {
+      // Слушаем изменения состояния аудио других пользователей
       socketRef.current.on('peerAudioDisabledStateChanged', ({ peerId, isAudioDisabled }) => {
         setAudioDisabledPeers(prev => {
           const newStates = new Map(prev);
@@ -2734,13 +2738,12 @@ function App() {
           return newStates;
         });
       });
-    }
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.off('peerAudioDisabledStateChanged');
-      }
-    };
+      // Очистка при размонтировании
+      return () => {
+        socketRef.current?.off('peerAudioDisabledStateChanged');
+      };
+    }
   }, []);
 
   if (!isJoined) {
