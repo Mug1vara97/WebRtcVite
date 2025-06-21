@@ -807,12 +807,28 @@ io.on('connection', async (socket) => {
         }
     });
 
-    // Add audio disabled state handling
+    // Update audio disabled state handling
     socket.on('audioDisabledStateChanged', ({ isAudioDisabled }) => {
         if (!socket.data?.roomId) {
             console.error('Room ID not found for socket:', socket.id);
             return;
         }
+
+        const room = rooms.get(socket.data.roomId);
+        if (!room) {
+            console.error('Room not found:', socket.data.roomId);
+            return;
+        }
+
+        const peer = peers.get(socket.id);
+        if (!peer) {
+            console.error('Peer not found:', socket.id);
+            return;
+        }
+
+        // Обновляем состояние аудио пира
+        peer.setAudioDisabled(isAudioDisabled);
+        room.setPeerAudioDisabledState(socket.id, isAudioDisabled);
 
         // Broadcast to all peers in the room except the sender
         socket.to(socket.data.roomId).emit('peerAudioDisabledStateChanged', {

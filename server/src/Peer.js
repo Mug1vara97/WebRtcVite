@@ -9,6 +9,7 @@ class Peer {
         this.consumers = new Map();
         this.speaking = false;
         this.muted = false;
+        this.audioDisabled = false;
         this.screenProducers = new Map(); // Separate map for screen sharing producers
     }
 
@@ -86,6 +87,14 @@ class Peer {
 
     removeConsumer(consumerId) {
         this.consumers.delete(consumerId);
+    }
+
+    setAudioDisabled(disabled) {
+        this.audioDisabled = disabled;
+    }
+
+    isAudioDisabled() {
+        return this.audioDisabled;
     }
 
     close() {

@@ -2697,7 +2697,7 @@ function App() {
     }
   };
 
-  // Add toggleAudio function
+  // Modify toggleAudio function
   const toggleAudio = useCallback(() => {
     const newState = !isAudioEnabled;
     setIsAudioEnabled(newState);

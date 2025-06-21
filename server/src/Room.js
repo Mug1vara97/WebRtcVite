@@ -12,10 +12,14 @@ class Room {
 
     addPeer(peer) {
         this.peers.set(peer.id, peer);
-        // Broadcast new peer's mute state
+        // Broadcast new peer's states
         this.io.to(this.id).emit('peerMuteStateChanged', {
             peerId: peer.id,
-            isMuted: peer.muted || false
+            isMuted: peer.isMuted()
+        });
+        this.io.to(this.id).emit('peerAudioDisabledStateChanged', {
+            peerId: peer.id,
+            isAudioDisabled: peer.isAudioDisabled()
         });
     }
 
@@ -70,6 +74,25 @@ class Room {
             this.io.to(this.id).emit('peerMuteStateChanged', {
                 peerId,
                 isMuted
+            });
+        }
+    }
+
+    // Add method to get peer's audio disabled state
+    getPeerAudioDisabledState(peerId) {
+        const peer = this.peers.get(peerId);
+        return peer ? peer.isAudioDisabled() : false;
+    }
+
+    // Add method to set peer's audio disabled state
+    setPeerAudioDisabledState(peerId, isDisabled) {
+        const peer = this.peers.get(peerId);
+        if (peer) {
+            peer.setAudioDisabled(isDisabled);
+            // Broadcast audio disabled state change to all peers
+            this.io.to(this.id).emit('peerAudioDisabledStateChanged', {
+                peerId,
+                isAudioDisabled: isDisabled
             });
         }
     }
