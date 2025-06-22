@@ -2857,21 +2857,6 @@ function App() {
                     )}
                     {userName}
                   </Box>
-                  <IconButton
-                    onClick={handleMute}
-                    sx={{
-                      ...styles.micIcon,
-                      ...(isMuted && styles.mutedMicIcon),
-                      ...(!isMuted && (
-                        speakingStates.get(socketRef.current?.id) 
-                          ? styles.speakingMicIcon 
-                          : styles.silentMicIcon
-                      ))
-                    }}
-                  >
-                    {isMuted ? <MicOff /> : <Mic />}
-                  </IconButton>
-                  <MuteIndicator peerId={socketRef.current?.id} />
                 </VideoView>
               ) : (
                 <div style={{ 
@@ -2985,8 +2970,6 @@ function App() {
                     >
                       {gainNodesRef.current.get(peer.id)?.gain.value === 0 ? (
                         <VolumeOff sx={{ fontSize: 20 }} />
-                      ) : speakingStates.get(peer.id) ? (
-                        <VolumeUp sx={{ fontSize: 20 }} />
                       ) : (
                         <VolumeUp sx={{ fontSize: 20 }} />
                       )}
@@ -3051,8 +3034,6 @@ function App() {
                     >
                       {gainNodesRef.current.get(peer.id)?.gain.value === 0 ? (
                         <VolumeOff sx={{ fontSize: 20 }} />
-                      ) : speakingStates.get(peer.id) ? (
-                        <VolumeUp sx={{ fontSize: 20 }} />
                       ) : (
                         <VolumeUp sx={{ fontSize: 20 }} />
                       )}
