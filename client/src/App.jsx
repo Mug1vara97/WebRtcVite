@@ -2833,6 +2833,30 @@ function App() {
                   isMuted={isMuted}
                   isSpeaking={speakingStates.get(socketRef.current?.id)}
                 >
+                  <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    width: 'fit-content'
+                  }}>
+                    {isMuted ? (
+                      <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                    ) : speakingStates.get(socketRef.current?.id) ? (
+                      <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
+                    ) : (
+                      <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
+                    )}
+                    {!isAudioEnabled && (
+                      <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                    )}
+                    {userName}
+                  </Box>
                   <IconButton
                     onClick={handleMute}
                     sx={{
