@@ -995,6 +995,7 @@ function App() {
     console.log('toggleUserVolume called with peerId:', peerId);
     console.log('Current volumes:', volumes);
     console.log('Current gain nodes:', gainNodesRef.current);
+    console.log('Current audio elements:', audioRef.current);
     
     const currentVolume = volumes.get(peerId) || 100;
     const newVolume = currentVolume === 0 ? 100 : 0;
@@ -1008,6 +1009,15 @@ function App() {
       gainNode.gain.value = newVolume / 100;
     } else {
       console.warn('No gain node found for peer:', peerId);
+    }
+
+    // Update audio element muted state
+    const audioElement = audioRef.current.get(peerId);
+    if (audioElement instanceof HTMLAudioElement) {
+      console.log('Found audio element for peer:', peerId);
+      audioElement.muted = newVolume === 0;
+    } else {
+      console.warn('No audio element found for peer:', peerId);
     }
 
     // Update volume state
