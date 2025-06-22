@@ -869,19 +869,19 @@ const VideoOverlay = React.memo(({
               console.error('toggleUserVolume is not a function:', toggleUserVolume);
             }
           }}
-          className={`volumeControl ${
-            volume === 0
-              ? 'muted'
-              : isSpeaking
-              ? 'speaking'
-              : 'silent'
-          }`}
-          sx={styles.volumeIcon}
+          className={`volumeControl ${volume === 0 ? 'muted' : ''}`}
+          sx={{
+            ...styles.volumeIcon,
+            backgroundColor: volume === 0 ? 'rgba(237, 66, 69, 0.1)' : 'transparent',
+            '&:hover': {
+              backgroundColor: volume === 0 ? 'rgba(237, 66, 69, 0.2)' : 'rgba(0, 0, 0, 0.5)'
+            }
+          }}
         >
           {volume === 0 ? (
-            <VolumeOffRounded sx={{ fontSize: 20 }} />
+            <VolumeOffRounded sx={{ fontSize: 20, color: '#ed4245' }} />
           ) : (
-            <VolumeUpRounded sx={{ fontSize: 20 }} />
+            <VolumeUpRounded sx={{ fontSize: 20, color: isSpeaking ? '#3ba55c' : '#B5BAC1' }} />
           )}
         </IconButton>
       )}
@@ -966,37 +966,35 @@ function App() {
     console.log('Current gain nodes:', gainNodesRef.current);
     console.log('Current audio elements:', audioRef.current);
     
-    const currentVolume = volumes.get(peerId) || 100;
-    const newVolume = currentVolume === 0 ? 100 : 0;
-    
-    console.log('Toggling volume from', currentVolume, 'to', newVolume);
-    
-    // Update gain node
-    const gainNode = gainNodesRef.current.get(peerId);
-    if (gainNode) {
-      console.log('Found gain node for peer:', peerId);
-      gainNode.gain.value = newVolume / 100;
-    } else {
-      console.warn('No gain node found for peer:', peerId);
-    }
-
-    // Update audio element muted state
-    const audioElement = audioRef.current.get(peerId);
-    if (audioElement instanceof HTMLAudioElement) {
-      console.log('Found audio element for peer:', peerId);
-      audioElement.muted = newVolume === 0;
-    } else {
-      console.warn('No audio element found for peer:', peerId);
-    }
-
-    // Update volume state
     setVolumes(prev => {
+      const currentVolume = prev.get(peerId) || 100;
+      const newVolume = currentVolume === 0 ? 100 : 0;
+      console.log('Toggling volume from', currentVolume, 'to', newVolume);
+      
+      // Update gain node
+      const gainNode = gainNodesRef.current.get(peerId);
+      if (gainNode) {
+        console.log('Found gain node for peer:', peerId);
+        gainNode.gain.value = newVolume / 100;
+      } else {
+        console.warn('No gain node found for peer:', peerId);
+      }
+
+      // Update audio element muted state
+      const audioElement = audioRef.current.get(peerId);
+      if (audioElement instanceof HTMLAudioElement) {
+        console.log('Found audio element for peer:', peerId);
+        audioElement.muted = newVolume === 0;
+      } else {
+        console.warn('No audio element found for peer:', peerId);
+      }
+
       const newVolumes = new Map(prev);
       newVolumes.set(peerId, newVolume);
       console.log('Updated volumes:', newVolumes);
       return newVolumes;
     });
-  }, [volumes]);
+  }, []);
   const [useEarpiece, setUseEarpiece] = useState(true);
   const isMobile = useMemo(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent), []);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
