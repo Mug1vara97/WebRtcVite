@@ -861,7 +861,14 @@ const VideoOverlay = React.memo(({
       {/* Кнопка управления громкостью (только для удаленных пользователей) */}
       {!isLocal && (
         <IconButton
-          onClick={() => toggleUserVolume(peerId)}
+          onClick={() => {
+            console.log('Toggling volume for peer:', peerId, 'Current volume:', volume);
+            if (typeof toggleUserVolume === 'function') {
+              toggleUserVolume(peerId);
+            } else {
+              console.error('toggleUserVolume is not a function:', toggleUserVolume);
+            }
+          }}
           className={`volumeControl ${
             volume === 0
               ? 'muted'
@@ -877,6 +884,7 @@ const VideoOverlay = React.memo(({
             borderRadius: '50%',
             transition: 'all 0.2s ease',
             zIndex: 10,
+            cursor: 'pointer',
             '&.muted': {
               backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
               '&:hover': {
@@ -936,6 +944,8 @@ const VideoView = React.memo(({
   children,
   toggleUserVolume 
 }) => {
+  console.log('VideoView props:', { peerName, peerId, volume, toggleUserVolume: !!toggleUserVolume });
+  
   return (
     <div style={{
       position: 'relative',
@@ -982,19 +992,29 @@ function App() {
 
   // Individual volume control for each user
   const toggleUserVolume = useCallback((peerId) => {
+    console.log('toggleUserVolume called with peerId:', peerId);
+    console.log('Current volumes:', volumes);
+    console.log('Current gain nodes:', gainNodesRef.current);
+    
     const currentVolume = volumes.get(peerId) || 100;
     const newVolume = currentVolume === 0 ? 100 : 0;
+    
+    console.log('Toggling volume from', currentVolume, 'to', newVolume);
     
     // Update gain node
     const gainNode = gainNodesRef.current.get(peerId);
     if (gainNode) {
+      console.log('Found gain node for peer:', peerId);
       gainNode.gain.value = newVolume / 100;
+    } else {
+      console.warn('No gain node found for peer:', peerId);
     }
 
     // Update volume state
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.set(peerId, newVolume);
+      console.log('Updated volumes:', newVolumes);
       return newVolumes;
     });
   }, [volumes]);
@@ -3020,7 +3040,9 @@ function App() {
                       volume={volumes.get(peer.id) || 100}
                       peerId={peer.id}
                       toggleUserVolume={toggleUserVolume}
-                    />
+                    >
+                      {/* Добавляем пустой children prop для консистентности */}
+                    </VideoOverlay>
                   </div>
                 )}
               </Box>
