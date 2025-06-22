@@ -973,6 +973,26 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volumes, setVolumes] = useState(new Map());
+
+  // Individual volume control for each user
+  const toggleUserVolume = useCallback((peerId) => {
+    const currentVolume = volumes.get(peerId) || 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
+    
+    // Update gain node
+    const gainNode = gainNodesRef.current.get(peerId);
+    if (gainNode) {
+      gainNode.gain.value = newVolume / 100;
+    }
+
+    // Update volume state
+    setVolumes(prev => {
+      const newVolumes = new Map(prev);
+      newVolumes.set(peerId, newVolume);
+      return newVolumes;
+    });
+  }, [volumes]);
   const [useEarpiece, setUseEarpiece] = useState(true);
   const isMobile = useMemo(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent), []);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -982,7 +1002,6 @@ function App() {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [peers, setPeers] = useState(new Map());
   const [error, setError] = useState('');
-  const [volumes, setVolumes] = useState(new Map());
   const [isJoining, setIsJoining] = useState(false);
   const [speakingStates, setSpeakingStates] = useState(new Map());
   const [audioStates, setAudioStates] = useState(new Map()); // Состояния аудио для всех пиров
@@ -1757,24 +1776,7 @@ function App() {
     };
   }, [socketRef.current]);
 
-  // Individual volume control
-  const toggleUserVolume = useCallback((peerId) => {
-    const currentVolume = volumes.get(peerId) || 100;
-    const newVolume = currentVolume === 0 ? 100 : 0;
-    
-    // Update gain node
-    const gainNode = gainNodesRef.current.get(peerId);
-    if (gainNode) {
-      gainNode.gain.value = newVolume / 100;
-    }
 
-    // Update volume state
-    setVolumes(prev => {
-      const newVolumes = new Map(prev);
-      newVolumes.set(peerId, newVolume);
-      return newVolumes;
-    });
-  }, [volumes]);
 
   const initializeDevice = async (routerRtpCapabilities) => {
     try {
@@ -2873,24 +2875,7 @@ function App() {
     isAudioEnabledRef.current = isAudioEnabled;
   }, [isAudioEnabled]);
 
-  // Add individual volume control
-  const toggleUserVolume = useCallback((peerId) => {
-    const currentVolume = volumes.get(peerId) || 100;
-    const newVolume = currentVolume === 0 ? 100 : 0;
-    
-    // Update gain node
-    const gainNode = gainNodesRef.current.get(peerId);
-    if (gainNode) {
-      gainNode.gain.value = newVolume / 100;
-    }
 
-    // Update volume state
-    setVolumes(prev => {
-      const newVolumes = new Map(prev);
-      newVolumes.set(peerId, newVolume);
-      return newVolumes;
-    });
-  }, [volumes]);
 
   if (!isJoined) {
     return (
