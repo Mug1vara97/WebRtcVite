@@ -37,7 +37,8 @@ import {
   NoiseAware,
   NoiseControlOff,
   ExpandMore,
-  HeadsetOff
+  HeadsetOff,
+  Headset
 } from '@mui/icons-material';
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
@@ -2888,10 +2889,10 @@ function App() {
                       ) : (
                         <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
                       )}
-                      {userName}
                       {!isAudioEnabled && (
                         <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
                       )}
+                      {userName}
                     </Box>
                   </Box>
                   <IconButton
@@ -2942,10 +2943,10 @@ function App() {
                       ) : (
                         <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
                       )}
-                      {peer.name}
                       {!audioStates.get(peer.id) && (
                         <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
                       )}
+                      {peer.name}
                     </Box>
                     <IconButton
                       onClick={() => handlePeerMute(peer.id)}
@@ -3007,10 +3008,10 @@ function App() {
                         ) : (
                           <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
                         )}
-                        {peer.name}
                         {!audioStates.get(peer.id) && (
                           <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
                         )}
+                        {peer.name}
                       </Box>
                     </Box>
                     <IconButton
@@ -3065,7 +3066,7 @@ function App() {
                 onClick={toggleAudio}
                 title={isAudioEnabled ? "Disable audio output" : "Enable audio output"}
               >
-                {isAudioEnabled ? <VolumeUp /> : <VolumeOff />}
+                {isAudioEnabled ? <Headset /> : <HeadsetOff />}
               </IconButton>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <IconButton
