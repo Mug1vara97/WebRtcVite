@@ -1346,15 +1346,41 @@ function App() {
 
       // Add handlers for peer events
       socket.on('peerJoined', ({ peerId, name, isMuted, isAudioEnabled }) => {
-        console.log('New peer joined:', name, peerId, 'muted:', isMuted, 'audio:', isAudioEnabled);
+        console.log('New peer joined:', { peerId, name, isMuted, isAudioEnabled });
+        
+        // Update peers state
         setPeers(prev => {
           const newPeers = new Map(prev);
-          newPeers.set(peerId, { id: peerId, name, isMuted: isMuted || false });
+          // Only add if peer doesn't exist
+          if (!newPeers.has(peerId)) {
+            newPeers.set(peerId, { 
+              id: peerId, 
+              name, 
+              isMuted: Boolean(isMuted) 
+            });
+            console.log('Added new peer to peers map:', { peerId, name });
+          }
           return newPeers;
         });
+
+        // Update audio states
         setAudioStates(prev => {
           const newStates = new Map(prev);
-          newStates.set(peerId, isAudioEnabled);
+          newStates.set(peerId, Boolean(isAudioEnabled));
+          return newStates;
+        });
+
+        // Initialize volumes for the new peer
+        setVolumes(prev => {
+          const newVolumes = new Map(prev);
+          newVolumes.set(peerId, 100); // Default volume
+          return newVolumes;
+        });
+
+        // Initialize speaking state for the new peer
+        setSpeakingStates(prev => {
+          const newStates = new Map(prev);
+          newStates.set(peerId, false); // Initially not speaking
           return newStates;
         });
       });
