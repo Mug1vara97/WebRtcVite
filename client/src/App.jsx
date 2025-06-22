@@ -860,7 +860,7 @@ const VideoOverlay = React.memo(({
 });
 
 // Оптимизированный компонент для отображения видео
-const VideoView = React.memo(({ stream, peerName, isMuted, isSpeaking, children }) => {
+const VideoView = React.memo(({ stream, children }) => {
   return (
     <div style={{
       position: 'relative',
@@ -871,21 +871,12 @@ const VideoView = React.memo(({ stream, peerName, isMuted, isSpeaking, children 
       alignItems: 'center'
     }}>
       <VideoPlayer stream={stream} />
-      <VideoOverlay
-        peerName={peerName}
-        isMuted={isMuted}
-        isSpeaking={isSpeaking}
-      >
-        {children}
-      </VideoOverlay>
+      {children}
     </div>
   );
 }, (prevProps, nextProps) => {
   return (
     prevProps.stream === nextProps.stream &&
-    prevProps.peerName === nextProps.peerName &&
-    prevProps.isMuted === nextProps.isMuted &&
-    prevProps.isSpeaking === nextProps.isSpeaking &&
     prevProps.children === nextProps.children
   );
 });
