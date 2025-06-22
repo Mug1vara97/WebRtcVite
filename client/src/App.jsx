@@ -930,7 +930,7 @@ const VideoView = React.memo(({
   isSpeaking,
   isAudioEnabled,
   isLocal,
-  onVolumeClick,
+  peerId,
   volume,
   children 
 }) => {
@@ -950,7 +950,7 @@ const VideoView = React.memo(({
         isSpeaking={isSpeaking}
         isAudioEnabled={isAudioEnabled}
         isLocal={isLocal}
-        onVolumeClick={onVolumeClick}
+        onVolumeClick={() => toggleUserVolume(peerId)}
         volume={volume}
       >
         {children}
@@ -996,7 +996,6 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
-  const masterGainNodeRef = useRef(null);
   const isAudioEnabledRef = useRef(isAudioEnabled);
 
 
@@ -1758,17 +1757,24 @@ function App() {
     };
   }, [socketRef.current]);
 
-  const handleVolumeChange = (peerId, newValue) => {
+  // Individual volume control
+  const toggleUserVolume = useCallback((peerId) => {
+    const currentVolume = volumes.get(peerId) || 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
+    
+    // Update gain node
     const gainNode = gainNodesRef.current.get(peerId);
     if (gainNode) {
-      gainNode.gain.value = newValue === 0 ? 0 : 1;
-      setVolumes(prev => {
-        const newVolumes = new Map(prev);
-        newVolumes.set(peerId, newValue);
-        return newVolumes;
-      });
+      gainNode.gain.value = newVolume / 100;
     }
-  };
+
+    // Update volume state
+    setVolumes(prev => {
+      const newVolumes = new Map(prev);
+      newVolumes.set(peerId, newVolume);
+      return newVolumes;
+    });
+  }, [volumes]);
 
   const initializeDevice = async (routerRtpCapabilities) => {
     try {
@@ -2867,6 +2873,25 @@ function App() {
     isAudioEnabledRef.current = isAudioEnabled;
   }, [isAudioEnabled]);
 
+  // Add individual volume control
+  const toggleUserVolume = useCallback((peerId) => {
+    const currentVolume = volumes.get(peerId) || 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
+    
+    // Update gain node
+    const gainNode = gainNodesRef.current.get(peerId);
+    if (gainNode) {
+      gainNode.gain.value = newVolume / 100;
+    }
+
+    // Update volume state
+    setVolumes(prev => {
+      const newVolumes = new Map(prev);
+      newVolumes.set(peerId, newVolume);
+      return newVolumes;
+    });
+  }, [volumes]);
+
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -2939,6 +2964,8 @@ function App() {
                   isSpeaking={speakingStates.get(socketRef.current?.id)}
                   isAudioEnabled={isAudioEnabled}
                   isLocal={true}
+                  peerId={socketRef.current?.id}
+                  volume={100}
                 />
               ) : (
                 <div style={{ 
@@ -2959,6 +2986,7 @@ function App() {
                     isSpeaking={speakingStates.get(socketRef.current?.id)}
                     isAudioEnabled={isAudioEnabled}
                     isLocal={true}
+                    volume={100}
                   />
                 </div>
               )}
@@ -2975,7 +3003,7 @@ function App() {
                     isSpeaking={speakingStates.get(peer.id)}
                     isAudioEnabled={audioStates.get(peer.id)}
                     isLocal={false}
-                    onVolumeClick={() => handleVolumeChange(peer.id, volumes.get(peer.id) || 100)}
+                    peerId={peer.id}
                     volume={volumes.get(peer.id) || 100}
                   />
                 ) : (
@@ -2997,7 +3025,7 @@ function App() {
                       isSpeaking={speakingStates.get(peer.id)}
                       isAudioEnabled={audioStates.get(peer.id)}
                       isLocal={false}
-                      onVolumeClick={() => handleVolumeChange(peer.id, volumes.get(peer.id) || 100)}
+                      onVolumeClick={() => toggleUserVolume(peer.id)}
                       volume={volumes.get(peer.id) || 100}
                     />
                   </div>
