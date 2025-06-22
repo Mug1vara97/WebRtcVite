@@ -1419,15 +1419,6 @@ function App() {
                 sampleRate: 48000,
                 latencyHint: 'interactive'
               });
-
-              // Если наушники выключены, сразу приостанавливаем контекст
-              if (!isAudioEnabled) {
-                await audioContextRef.current.suspend();
-              } else {
-                await audioContextRef.current.resume();
-              }
-              
-              console.log('Created new AudioContext:', audioContextRef.current);
             }
             
             await audioContextRef.current.resume();
@@ -1566,7 +1557,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = !isAudioEnabled; // Set initial muted state based on audio enabled state
+          audio.muted = false;
 
           // Устанавливаем вывод на текущий выбранный режим
           if (isMobile) {
@@ -1582,7 +1573,7 @@ function App() {
           
           // Create gain node
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = isAudioEnabled ? 1.0 : 0; // Set initial gain based on audio enabled state
+          gainNode.gain.value = 1.0;
 
           // Connect nodes только для анализа голоса
           source.connect(analyser);
@@ -1592,7 +1583,7 @@ function App() {
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
           audioRef.current.set(producer.producerSocketId, audio);
-          setVolumes(prev => new Map(prev).set(producer.producerSocketId, isAudioEnabled ? 100 : 0));
+          setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
           // Start voice detection
           detectSpeaking(analyser, producer.producerSocketId);
@@ -2794,26 +2785,18 @@ function App() {
       socketRef.current.emit('audioState', { isEnabled: newState });
     }
 
-    // Отключаем/включаем весь звук через AudioContext
-    if (audioContextRef.current) {
-      if (!newState) {
-        // Если выключаем звук, приостанавливаем AudioContext
-        audioContextRef.current.suspend();
-      } else {
-        // Если включаем звук, возобновляем AudioContext
-        audioContextRef.current.resume();
+    // Отключаем/включаем все аудио элементы
+    audioRef.current.forEach((peerAudio) => {
+      if (peerAudio instanceof HTMLAudioElement) {
+        peerAudio.muted = !newState;
+      } else if (peerAudio instanceof Map) {
+        const gainNode = gainNodesRef.current.get(peerAudio.id);
+        if (gainNode) {
+          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
+        }
       }
-    }
-
-    // Также обновляем состояние всех gain nodes для визуальной индикации
-    gainNodesRef.current.forEach((gainNode, peerId) => {
-      setVolumes(prev => {
-        const newVolumes = new Map(prev);
-        newVolumes.set(peerId, newState ? 100 : 0);
-        return newVolumes;
-      });
     });
-  }, [isAudioEnabled]);
+  }, [isAudioEnabled, volumes]);
 
   // Add initial audio state when joining
   useEffect(() => {
