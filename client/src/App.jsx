@@ -851,7 +851,7 @@ const VideoOverlay = React.memo(({
         ) : (
           <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
         )}
-        {!isAudioEnabled && !isLocal && (
+        {!isAudioEnabled && (
           <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
         )}
         {peerName}
