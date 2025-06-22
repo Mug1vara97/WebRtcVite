@@ -1082,7 +1082,7 @@ function App() {
         setRemoteScreens(prev => {
           const newScreens = new Map(prev);
           const screenEntry = [...newScreens.entries()].find(
-            ([_, data]) => data.producerId === producerId
+            ([id, data]) => data.producerId === producerId
           );
           
           if (screenEntry) {
@@ -1106,7 +1106,7 @@ function App() {
         setRemoteVideos(prev => {
           const newVideos = new Map(prev);
           const videoEntry = [...newVideos.entries()].find(
-            ([_, data]) => data.producerId === producerId
+            ([id, data]) => data.producerId === producerId
           );
           
           if (videoEntry) {
@@ -1124,7 +1124,7 @@ function App() {
 
               // Находим и закрываем соответствующий consumer
               const consumer = Array.from(consumersRef.current.entries()).find(
-                ([_, consumer]) => consumer.producerId === producerId
+                ([id, consumer]) => consumer.producerId === producerId
               );
               if (consumer) {
                 console.log('Found and closing associated consumer:', consumer[0]);
@@ -1419,6 +1419,15 @@ function App() {
                 sampleRate: 48000,
                 latencyHint: 'interactive'
               });
+
+              // Если наушники выключены, сразу приостанавливаем контекст
+              if (!isAudioEnabled) {
+                await audioContextRef.current.suspend();
+              } else {
+                await audioContextRef.current.resume();
+              }
+              
+              console.log('Created new AudioContext:', audioContextRef.current);
             }
             
             await audioContextRef.current.resume();
@@ -2721,7 +2730,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = !isAudioEnabled;
+          audio.muted = false;
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
@@ -2733,7 +2742,7 @@ function App() {
           const analyser = createAudioAnalyser(audioContext);
           
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = isAudioEnabled ? 1.0 : 0;
+          gainNode.gain.value = 1.0;
 
           source.connect(analyser);
           analyser.connect(gainNode);
@@ -2741,7 +2750,7 @@ function App() {
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
           audioRef.current.set(producer.producerSocketId, audio);
-          setVolumes(prev => new Map(prev).set(producer.producerSocketId, isAudioEnabled ? 100 : 0));
+          setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
           // Start voice detection with producerId
           detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
@@ -2785,18 +2794,26 @@ function App() {
       socketRef.current.emit('audioState', { isEnabled: newState });
     }
 
-    // Отключаем/включаем все аудио элементы
-    audioRef.current.forEach((peerAudio) => {
-      if (peerAudio instanceof HTMLAudioElement) {
-        peerAudio.muted = !newState;
-      } else if (peerAudio instanceof Map) {
-        const gainNode = gainNodesRef.current.get(peerAudio.id);
-        if (gainNode) {
-          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
-        }
+    // Отключаем/включаем весь звук через AudioContext
+    if (audioContextRef.current) {
+      if (!newState) {
+        // Если выключаем звук, приостанавливаем AudioContext
+        audioContextRef.current.suspend();
+      } else {
+        // Если включаем звук, возобновляем AudioContext
+        audioContextRef.current.resume();
       }
+    }
+
+    // Также обновляем состояние всех gain nodes для визуальной индикации
+    gainNodesRef.current.forEach((gainNode, peerId) => {
+      setVolumes(prev => {
+        const newVolumes = new Map(prev);
+        newVolumes.set(peerId, newState ? 100 : 0);
+        return newVolumes;
+      });
     });
-  }, [isAudioEnabled, volumes]);
+  }, [isAudioEnabled]);
 
   // Add initial audio state when joining
   useEffect(() => {
