@@ -1433,7 +1433,7 @@ function App() {
                   name: peer.name, 
                   isMuted: peer.isMuted || false 
                 });
-                audioStatesMap.set(peer.id, peer.isAudioEnabled);
+                audioStatesMap.set(peer.id, peer.isAudioEnabled());
               });
               setPeers(peersMap);
               setAudioStates(audioStatesMap);
