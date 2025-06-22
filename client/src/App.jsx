@@ -985,7 +985,7 @@ function App() {
   const [volumes, setVolumes] = useState(new Map());
   const [isJoining, setIsJoining] = useState(false);
   const [speakingStates, setSpeakingStates] = useState(new Map());
-  const [audioStates, setAudioStates] = useState(new Map());
+  const [audioStates, setAudioStates] = useState(new Map()); // Состояния аудио для всех пиров
   const [screenProducer, setScreenProducer] = useState(null);
   const [screenStream, setScreenStream] = useState(null);
   const [remoteScreens, setRemoteScreens] = useState(new Map());
@@ -995,10 +995,8 @@ function App() {
   const [isNoiseSuppressed, setIsNoiseSuppressed] = useState(false);
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
-
-  // Add refs
   const noiseSuppressionRef = useRef(null);
-  const masterGainNodeRef = useRef(null);
+
 
   const socketRef = useRef();
   const deviceRef = useRef();
@@ -1274,12 +1272,7 @@ function App() {
       });
       gainNodesRef.current.clear();
 
-      // Cleanup master gain node
-      if (masterGainNodeRef.current) {
-        masterGainNodeRef.current.disconnect();
-        masterGainNodeRef.current = null;
-      }
-
+      // Only close AudioContext if it exists and isn't already closed
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close();
       }
@@ -1305,32 +1298,6 @@ function App() {
     }
 
     try {
-      // Initialize AudioContext and master gain node first
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        console.log('Initializing new AudioContext');
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 48000,
-          latencyHint: 'interactive'
-        });
-
-        // Create and configure master gain node
-        console.log('Creating master gain node');
-        masterGainNodeRef.current = audioContextRef.current.createGain();
-        masterGainNodeRef.current.gain.value = isAudioEnabled ? 1.0 : 0.0;
-        masterGainNodeRef.current.connect(audioContextRef.current.destination);
-      }
-
-      // Resume AudioContext
-      if (audioContextRef.current.state === 'suspended') {
-        console.log('Resuming AudioContext');
-        await audioContextRef.current.resume();
-      }
-
-      console.log('Audio system initialized:', {
-        contextState: audioContextRef.current.state,
-        masterGainValue: masterGainNodeRef.current.gain.value
-      });
-
       // Очищаем старый сокет если есть
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -1616,45 +1583,36 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = true; // Always mute HTML audio element since we're using Web Audio API
+          audio.muted = false;
 
+          // Устанавливаем вывод на текущий выбранный режим
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
           }
           
+          // Create audio context and nodes only for audio streams
           const audioContext = audioContextRef.current;
           const source = audioContext.createMediaStreamSource(stream);
           
-          // Create analyzer for voice detection
+          // Add analyzer for voice activity detection
           const analyser = createAudioAnalyser(audioContext);
           
-          // Create gain node for individual volume control
+          // Create gain node
           const gainNode = audioContext.createGain();
           gainNode.gain.value = 1.0;
 
-          // Connect nodes in proper order:
-          // source -> analyser -> individual gain -> master gain -> destination
+          // Connect nodes только для анализа голоса
           source.connect(analyser);
           analyser.connect(gainNode);
-          gainNode.connect(masterGainNodeRef.current);
-
-          // Make sure master gain is connected to destination
-          if (!masterGainNodeRef.current.numberOfOutputs) {
-            masterGainNodeRef.current.connect(audioContext.destination);
-          }
 
           // Store references
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
           audioRef.current.set(producer.producerSocketId, audio);
-          
-          // Set initial volume
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
           // Start voice detection
-          detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
-
-          console.log('Audio setup completed for producer:', producer.producerSocketId);
+          detectSpeaking(analyser, producer.producerSocketId);
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
@@ -1794,11 +1752,7 @@ function App() {
   const handleVolumeChange = (peerId, newValue) => {
     const gainNode = gainNodesRef.current.get(peerId);
     if (gainNode) {
-      gainNode.gain.setTargetAtTime(
-        newValue / 100,
-        audioContextRef.current.currentTime,
-        0.015
-      );
+      gainNode.gain.value = newValue === 0 ? 0 : 1;
       setVolumes(prev => {
         const newVolumes = new Map(prev);
         newVolumes.set(peerId, newValue);
@@ -2793,7 +2747,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = true; // Always mute HTML audio element
+          audio.muted = false;
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
@@ -2805,12 +2759,10 @@ function App() {
           const analyser = createAudioAnalyser(audioContext);
           
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = 1.0; // Individual volume control
+          gainNode.gain.value = 1.0;
 
-          // Connect through master gain node
           source.connect(analyser);
           analyser.connect(gainNode);
-          gainNode.connect(masterGainNodeRef.current);
 
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
@@ -2849,42 +2801,28 @@ function App() {
     }
   };
 
-  // Update toggleAudio to use master gain node
+  // Update toggleAudio function
   const toggleAudio = useCallback(() => {
     const newState = !isAudioEnabled;
-    console.log('Toggling audio:', { newState });
-    
     setIsAudioEnabled(newState);
 
+    // Emit audio state change
     if (socketRef.current) {
       socketRef.current.emit('audioState', { isEnabled: newState });
     }
 
-    // Control all audio through master gain node
-    if (masterGainNodeRef.current && audioContextRef.current) {
-      // Make sure master gain is connected
-      if (!masterGainNodeRef.current.numberOfOutputs) {
-        masterGainNodeRef.current.connect(audioContextRef.current.destination);
+    // Отключаем/включаем все аудио элементы
+    audioRef.current.forEach((peerAudio) => {
+      if (peerAudio instanceof HTMLAudioElement) {
+        peerAudio.muted = !newState;
+      } else if (peerAudio instanceof Map) {
+        const gainNode = gainNodesRef.current.get(peerAudio.id);
+        if (gainNode) {
+          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
+        }
       }
-
-      // Set gain with smooth transition
-      masterGainNodeRef.current.gain.setTargetAtTime(
-        newState ? 1.0 : 0.0,
-        audioContextRef.current.currentTime,
-        0.015
-      );
-
-      console.log('Master gain updated:', {
-        newValue: newState ? 1.0 : 0.0,
-        contextState: audioContextRef.current.state
-      });
-    }
-
-    // If audio is being enabled, ensure AudioContext is running
-    if (newState && audioContextRef.current?.state === 'suspended') {
-      audioContextRef.current.resume().catch(console.error);
-    }
-  }, [isAudioEnabled]);
+    });
+  }, [isAudioEnabled, volumes]);
 
   // Add initial audio state when joining
   useEffect(() => {
