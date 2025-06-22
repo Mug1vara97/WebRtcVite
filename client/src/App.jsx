@@ -872,7 +872,7 @@ const VideoOverlay = React.memo(({
           className={`volumeControl ${
             volume === 0
               ? 'muted'
-              : isSpeaking
+              : isSpeaking && !isMuted
               ? 'speaking'
               : 'silent'
           }`}
@@ -909,7 +909,7 @@ const VideoOverlay = React.memo(({
             }
           }}
         >
-          {volume === 0 ? (
+          {volume === 0 || isMuted ? (
             <VolumeOff sx={{ fontSize: 20 }} />
           ) : (
             <VolumeUp sx={{ fontSize: 20 }} />
