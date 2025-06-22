@@ -1307,18 +1307,29 @@ function App() {
     try {
       // Initialize AudioContext and master gain node first
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        console.log('Initializing new AudioContext');
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
           sampleRate: 48000,
           latencyHint: 'interactive'
         });
 
-        // Create master gain node
+        // Create and configure master gain node
+        console.log('Creating master gain node');
         masterGainNodeRef.current = audioContextRef.current.createGain();
         masterGainNodeRef.current.gain.value = isAudioEnabled ? 1.0 : 0.0;
         masterGainNodeRef.current.connect(audioContextRef.current.destination);
       }
 
-      await audioContextRef.current.resume();
+      // Resume AudioContext
+      if (audioContextRef.current.state === 'suspended') {
+        console.log('Resuming AudioContext');
+        await audioContextRef.current.resume();
+      }
+
+      console.log('Audio system initialized:', {
+        contextState: audioContextRef.current.state,
+        masterGainValue: masterGainNodeRef.current.gain.value
+      });
 
       // Очищаем старый сокет если есть
       if (socketRef.current) {
@@ -1605,36 +1616,45 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = true; // Always mute HTML audio element
+          audio.muted = true; // Always mute HTML audio element since we're using Web Audio API
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
           }
           
-          // Create audio context and nodes only for audio streams
           const audioContext = audioContextRef.current;
           const source = audioContext.createMediaStreamSource(stream);
           
-          // Add analyzer for voice activity detection
+          // Create analyzer for voice detection
           const analyser = createAudioAnalyser(audioContext);
           
-          // Create gain node
+          // Create gain node for individual volume control
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = 1.0; // Individual volume control
+          gainNode.gain.value = 1.0;
 
-          // Connect through master gain node
+          // Connect nodes in proper order:
+          // source -> analyser -> individual gain -> master gain -> destination
           source.connect(analyser);
           analyser.connect(gainNode);
           gainNode.connect(masterGainNodeRef.current);
+
+          // Make sure master gain is connected to destination
+          if (!masterGainNodeRef.current.numberOfOutputs) {
+            masterGainNodeRef.current.connect(audioContext.destination);
+          }
 
           // Store references
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
           audioRef.current.set(producer.producerSocketId, audio);
+          
+          // Set initial volume
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
           // Start voice detection
           detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
+
+          console.log('Audio setup completed for producer:', producer.producerSocketId);
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
@@ -2832,6 +2852,8 @@ function App() {
   // Update toggleAudio to use master gain node
   const toggleAudio = useCallback(() => {
     const newState = !isAudioEnabled;
+    console.log('Toggling audio:', { newState });
+    
     setIsAudioEnabled(newState);
 
     if (socketRef.current) {
@@ -2839,15 +2861,26 @@ function App() {
     }
 
     // Control all audio through master gain node
-    if (masterGainNodeRef.current) {
+    if (masterGainNodeRef.current && audioContextRef.current) {
+      // Make sure master gain is connected
+      if (!masterGainNodeRef.current.numberOfOutputs) {
+        masterGainNodeRef.current.connect(audioContextRef.current.destination);
+      }
+
+      // Set gain with smooth transition
       masterGainNodeRef.current.gain.setTargetAtTime(
         newState ? 1.0 : 0.0,
         audioContextRef.current.currentTime,
         0.015
       );
+
+      console.log('Master gain updated:', {
+        newValue: newState ? 1.0 : 0.0,
+        contextState: audioContextRef.current.state
+      });
     }
 
-    // If audio is being enabled, try to resume AudioContext
+    // If audio is being enabled, ensure AudioContext is running
     if (newState && audioContextRef.current?.state === 'suspended') {
       audioContextRef.current.resume().catch(console.error);
     }
