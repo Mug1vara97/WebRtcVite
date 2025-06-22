@@ -890,6 +890,134 @@ const VideoView = React.memo(({ stream, peerName, isMuted, isSpeaking, children 
   );
 });
 
+// Add new VideoGrid component
+const VideoGrid = React.memo(({ localUser, peers, itemsPerPage = 9 }) => {
+  const [currentPage, setCurrentPage] = useState(0);
+  const allParticipants = useMemo(() => {
+    const all = [localUser];
+    peers.forEach(peer => all.push(peer));
+    return all;
+  }, [localUser, peers]);
+
+  const totalPages = Math.ceil(allParticipants.length / itemsPerPage);
+  const currentParticipants = allParticipants.slice(
+    currentPage * itemsPerPage,
+    (currentPage + 1) * itemsPerPage
+  );
+
+  const gridClassName = useMemo(() => {
+    const count = currentParticipants.length;
+    if (count === 1) return 'videoGrid solo';
+    if (count === 2) return 'videoGrid duo';
+    if (count === 3 || count === 4) return 'videoGrid quad';
+    return 'videoGrid grid';
+  }, [currentParticipants.length]);
+
+  return (
+    <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+      <Box className={gridClassName}>
+        {currentParticipants.map((participant, index) => (
+          <Box
+            key={participant.id || 'local'}
+            className={`videoItem ${participant.speaking ? 'speaking' : ''}`}
+            sx={{
+              gridArea: currentParticipants.length <= 4 ? `area${index + 1}` : undefined
+            }}
+          >
+            {participant.videoStream ? (
+              <VideoView
+                stream={participant.videoStream}
+                peerName={participant.name}
+                isMuted={participant.isMuted}
+                isSpeaking={participant.speaking}
+              >
+                {participant.controls}
+              </VideoView>
+            ) : (
+              <div style={{
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}>
+                <Box sx={styles.userAvatar}>
+                  {participant.name[0].toUpperCase()}
+                </Box>
+                <Box sx={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  padding: '12px',
+                  background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
+                }}>
+                  <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    width: 'fit-content'
+                  }}>
+                    {participant.isMuted ? (
+                      <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                    ) : participant.speaking ? (
+                      <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
+                    ) : (
+                      <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
+                    )}
+                    {participant.name}
+                    {!participant.isAudioEnabled && (
+                      <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
+                    )}
+                  </Box>
+                </Box>
+                {participant.controls}
+              </div>
+            )}
+          </Box>
+        ))}
+      </Box>
+      {totalPages > 1 && (
+        <Box sx={{
+          position: 'absolute',
+          bottom: 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          gap: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          padding: '4px 8px',
+          borderRadius: '20px'
+        }}>
+          {Array.from({ length: totalPages }).map((_, index) => (
+            <IconButton
+              key={index}
+              size="small"
+              onClick={() => setCurrentPage(index)}
+              sx={{
+                color: currentPage === index ? '#ffffff' : '#72767d',
+                '&:hover': {
+                  color: '#ffffff'
+                }
+              }}
+            >
+              {index + 1}
+            </IconButton>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+});
+
 function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
@@ -2500,11 +2628,6 @@ function App() {
     );
   }, [isScreenSharing, screenStream, remoteScreens, peers, userName]);
 
-  // Обновляем renderVideos
-  const renderVideos = useMemo(() => {
-    return null;
-  }, []);
-
   // Добавляем функцию переключения режима динамика
   const toggleSpeakerMode = async () => {
     const newMode = !useEarpiece;
@@ -2762,6 +2885,63 @@ function App() {
     };
   }, [socketRef.current]);
 
+  const localParticipant = useMemo(() => ({
+    id: socketRef.current?.id || 'local',
+    name: userName,
+    videoStream: videoStream,
+    isMuted,
+    speaking: speakingStates.get(socketRef.current?.id),
+    isAudioEnabled,
+    controls: (
+      <IconButton
+        onClick={handleMute}
+        sx={{
+          ...styles.micIcon,
+          ...(isMuted && styles.mutedMicIcon),
+          ...(!isMuted && (
+            speakingStates.get(socketRef.current?.id)
+              ? styles.speakingMicIcon
+              : styles.silentMicIcon
+          ))
+        }}
+      >
+        {isMuted ? <MicOff /> : <Mic />}
+      </IconButton>
+    )
+  }), [userName, videoStream, isMuted, speakingStates, socketRef.current?.id, isAudioEnabled]);
+
+  const peerParticipants = useMemo(() => {
+    return Array.from(peers.values()).map(peer => ({
+      id: peer.id,
+      name: peer.name,
+      videoStream: remoteVideos.get(peer.id)?.stream,
+      isMuted: peer.isMuted,
+      speaking: speakingStates.get(peer.id),
+      isAudioEnabled: audioStates.get(peer.id),
+      controls: (
+        <IconButton
+          onClick={() => handlePeerMute(peer.id)}
+          className={`volumeControl ${
+            gainNodesRef.current.get(peer.id)?.gain.value === 0
+              ? 'muted'
+              : speakingStates.get(peer.id)
+              ? 'speaking'
+              : 'silent'
+          }`}
+          sx={styles.volumeIcon}
+        >
+          {gainNodesRef.current.get(peer.id)?.gain.value === 0 ? (
+            <VolumeOff sx={{ fontSize: 20 }} />
+          ) : speakingStates.get(peer.id) ? (
+            <VolumeUp sx={{ fontSize: 20 }} />
+          ) : (
+            <VolumeUp sx={{ fontSize: 20 }} />
+          )}
+        </IconButton>
+      )
+    }));
+  }, [peers, remoteVideos, speakingStates, audioStates]);
+
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -2819,230 +2999,14 @@ function App() {
                 {roomId}
               </Typography>
             </Box>
-
           </Toolbar>
         </AppBar>
         <Container sx={styles.container}>
-          <Box sx={styles.videoGrid}>
-            {/* Local user */}
-            <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
-              {isVideoEnabled && videoStream ? (
-                <VideoView 
-                  stream={videoStream} 
-                  peerName={userName}
-                  isMuted={isMuted}
-                  isSpeaking={speakingStates.get(socketRef.current?.id)}
-                >
-                  <IconButton
-                    onClick={handleMute}
-                    sx={{
-                      ...styles.micIcon,
-                      ...(isMuted && styles.mutedMicIcon),
-                      ...(!isMuted && (
-                        speakingStates.get(socketRef.current?.id) 
-                          ? styles.speakingMicIcon 
-                          : styles.silentMicIcon
-                      ))
-                    }}
-                  >
-                    {isMuted ? <MicOff /> : <Mic />}
-                  </IconButton>
-                  <MuteIndicator peerId={socketRef.current?.id} />
-                </VideoView>
-              ) : (
-                <div style={{ 
-                  position: 'relative', 
-                  width: '100%', 
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center'
-                }}>
-                  <Box sx={styles.userAvatar}>
-                    {userName[0].toUpperCase()}
-                  </Box>
-                  <Box sx={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    padding: '12px',
-                    background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
-                  }}>
-                    <Box sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      color: '#ffffff',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      width: 'fit-content'
-                    }}>
-                      {isMuted ? (
-                        <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                      ) : speakingStates.get(socketRef.current?.id) ? (
-                        <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
-                      ) : (
-                        <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
-                      )}
-                      {!isAudioEnabled && (
-                        <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                      )}
-                      {userName}
-                    </Box>
-                  </Box>
-                  <IconButton
-                    onClick={handleMute}
-                    sx={{
-                      ...styles.micIcon,
-                      ...(isMuted && styles.mutedMicIcon),
-                      ...(!isMuted && (
-                        speakingStates.get(socketRef.current?.id) 
-                          ? styles.speakingMicIcon 
-                          : styles.silentMicIcon
-                      ))
-                    }}
-                  >
-                    {isMuted ? <MicOff /> : <Mic />}
-                  </IconButton>
-                  <MuteIndicator peerId={socketRef.current?.id} />
-                </div>
-              )}
-            </Box>
-
-            {/* Remote users */}
-            {Array.from(peers.values()).map((peer) => (
-              <Box key={peer.id} sx={styles.videoItem} className={speakingStates.get(peer.id) ? 'speaking' : ''}>
-                {remoteVideos.get(peer.id)?.stream ? (
-                  <VideoView 
-                    stream={remoteVideos.get(peer.id).stream} 
-                    peerName={peer.name}
-                    isMuted={peer.isMuted}
-                    isSpeaking={speakingStates.get(peer.id)}
-                  >
-                    <Box sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      color: '#ffffff',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      width: 'fit-content'
-                    }}>
-                      {peer.isMuted ? (
-                        <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                      ) : speakingStates.get(peer.id) ? (
-                        <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
-                      ) : (
-                        <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
-                      )}
-                      {!audioStates.get(peer.id) && (
-                        <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                      )}
-                      {peer.name}
-                    </Box>
-                    <IconButton
-                      onClick={() => handlePeerMute(peer.id)}
-                      className={`volumeControl ${
-                        gainNodesRef.current.get(peer.id)?.gain.value === 0
-                          ? 'muted'
-                          : speakingStates.get(peer.id)
-                          ? 'speaking'
-                          : 'silent'
-                      }`}
-                      sx={styles.volumeIcon}
-                    >
-                      {gainNodesRef.current.get(peer.id)?.gain.value === 0 ? (
-                        <VolumeOff sx={{ fontSize: 20 }} />
-                      ) : speakingStates.get(peer.id) ? (
-                        <VolumeUp sx={{ fontSize: 20 }} />
-                      ) : (
-                        <VolumeUp sx={{ fontSize: 20 }} />
-                      )}
-                    </IconButton>
-                  </VideoView>
-                ) : (
-                  <div style={{ 
-                    position: 'relative', 
-                    width: '100%', 
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    alignItems: 'center'
-                  }}>
-                    <Box sx={styles.userAvatar}>
-                      {peer.name[0].toUpperCase()}
-                    </Box>
-                    <Box sx={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      padding: '12px',
-                      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
-                    }}>
-                      <Box sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        color: '#ffffff',
-                        fontSize: '14px',
-                        fontWeight: 500,
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                        width: 'fit-content'
-                      }}>
-                        {peer.isMuted ? (
-                          <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                        ) : speakingStates.get(peer.id) ? (
-                          <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
-                        ) : (
-                          <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
-                        )}
-                        {!audioStates.get(peer.id) && (
-                          <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                        )}
-                        {peer.name}
-                      </Box>
-                    </Box>
-                    <IconButton
-                      onClick={() => handlePeerMute(peer.id)}
-                      className={`volumeControl ${
-                        gainNodesRef.current.get(peer.id)?.gain.value === 0
-                          ? 'muted'
-                          : speakingStates.get(peer.id)
-                          ? 'speaking'
-                          : 'silent'
-                      }`}
-                      sx={styles.volumeIcon}
-                    >
-                      {gainNodesRef.current.get(peer.id)?.gain.value === 0 ? (
-                        <VolumeOff sx={{ fontSize: 20 }} />
-                      ) : speakingStates.get(peer.id) ? (
-                        <VolumeUp sx={{ fontSize: 20 }} />
-                      ) : (
-                        <VolumeUp sx={{ fontSize: 20 }} />
-                      )}
-                    </IconButton>
-                  </div>
-                )}
-              </Box>
-            ))}
-
-            {/* Screen sharing */}
-            {(isScreenSharing || remoteScreens.size > 0) && renderScreenShares}
-            {/* Video */}
-            {(isVideoEnabled || remoteVideos.size > 0) && renderVideos}
-          </Box>
+          <VideoGrid
+            localUser={localParticipant}
+            peers={peerParticipants}
+          />
+          {(isScreenSharing || remoteScreens.size > 0) && renderScreenShares}
         </Container>
         <Box sx={styles.bottomBar}>
           <Box sx={styles.controlsContainer}>

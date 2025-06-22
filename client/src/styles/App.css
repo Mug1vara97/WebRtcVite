@@ -71,42 +71,72 @@
   }
 }
 
-/* Video grid styles */
+/* Video grid layouts */
 .videoGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 8px;
-  padding: 16px;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
+  height: 100%;
+  padding: 16px;
 }
 
+/* Solo layout (1 participant) */
+.videoGrid.solo {
+  grid-template-areas: "area1";
+}
+
+/* Duo layout (2 participants) */
+.videoGrid.duo {
+  grid-template-areas: 
+    "area1 area2";
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Quad layout (3-4 participants) */
+.videoGrid.quad {
+  grid-template-areas: 
+    "area1 area2"
+    "area3 area4";
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* Grid layout (5+ participants) */
+.videoGrid.grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-auto-rows: 1fr;
+}
+
+/* Ensure video items maintain aspect ratio */
 .videoItem {
-  background-color: #2B2D31;
-  border-radius: 8px;
-  overflow: hidden;
   position: relative;
   aspect-ratio: 16/9;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  transition: box-shadow 0.3s ease-in-out;
+  background-color: #202225;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease-out;
 }
 
-.videoItem.speaking::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border: 2px solid #3ba55c;
-  border-radius: 8px;
+.videoItem.speaking {
+  box-shadow: 0 0 0 2px #3ba55c;
   animation: pulse 2s infinite;
-  pointer-events: none;
-  z-index: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .videoGrid.duo,
+  .videoGrid.quad {
+    grid-template-areas: 
+      "area1"
+      "area2"
+      "area3"
+      "area4";
+    grid-template-columns: 1fr;
+  }
+
+  .videoGrid.grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* User styles */
