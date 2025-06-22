@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -8,14 +8,21 @@ import {
   ListItemIcon,
   ListItemText,
   Typography,
-  Box
+  Box,
+  Grid,
+  Card,
+  CardActionArea,
+  CardMedia,
+  CardContent,
+  CircularProgress
 } from '@mui/material';
 import {
   ScreenShare,
   Window,
-  Tab,
-  Close
+  Close,
+  Monitor
 } from '@mui/icons-material';
+import { getSources, captureSource } from '../utils/desktopCapture';
 
 const styles = {
   dialog: {
@@ -23,7 +30,8 @@ const styles = {
       backgroundColor: '#2f3136',
       color: '#ffffff',
       borderRadius: '8px',
-      minWidth: '400px'
+      minWidth: '800px',
+      maxWidth: '1000px'
     }
   },
   dialogTitle: {
@@ -37,74 +45,114 @@ const styles = {
   dialogContent: {
     padding: '16px 24px'
   },
-  list: {
-    padding: 0
-  },
-  listItem: {
-    borderRadius: '4px',
-    margin: '4px 0',
-    padding: '8px 16px',
-    '&:hover': {
-      backgroundColor: '#36393f',
-      cursor: 'pointer'
-    }
-  },
-  listItemIcon: {
-    minWidth: '40px',
-    '& .MuiSvgIcon-root': {
-      color: '#b9bbbe'
-    }
-  },
-  listItemText: {
-    '& .MuiTypography-root': {
-      color: '#dcddde'
-    }
-  },
   description: {
     color: '#b9bbbe',
     fontSize: '0.9rem',
     marginBottom: '16px'
+  },
+  sourceGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gap: '16px',
+    width: '100%',
+    padding: '8px'
+  },
+  sourceCard: {
+    backgroundColor: '#36393f',
+    borderRadius: '8px',
+    transition: 'transform 0.2s ease-in-out',
+    '&:hover': {
+      transform: 'scale(1.02)',
+      backgroundColor: '#40444b'
+    }
+  },
+  sourceCardContent: {
+    padding: '12px',
+    '&:last-child': {
+      paddingBottom: '12px'
+    }
+  },
+  sourceName: {
+    color: '#ffffff',
+    fontSize: '0.9rem',
+    fontWeight: 500,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  sourceType: {
+    color: '#b9bbbe',
+    fontSize: '0.8rem'
+  },
+  thumbnail: {
+    width: '100%',
+    height: '135px',
+    objectFit: 'cover',
+    backgroundColor: '#202225',
+    borderRadius: '4px'
+  },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '32px',
+    color: '#b9bbbe'
+  },
+  noSources: {
+    textAlign: 'center',
+    padding: '32px',
+    color: '#b9bbbe'
+  },
+  sourceIcon: {
+    width: '16px',
+    height: '16px',
+    marginRight: '8px'
   }
 };
 
 const ScreenShareModal = ({ open, onClose, onSelect }) => {
-  const handleSelect = async (type) => {
-    try {
-      let displayMediaOptions = {
-        video: {
-          cursor: 'always',
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1280, max: 1280 },
-          height: { ideal: 720, max: 720 },
-          aspectRatio: { ideal: 16/9 }
-        },
-        audio: false
-      };
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-      // Добавляем специфичные настройки в зависимости от выбора
-      if (type === 'screen') {
-        displayMediaOptions.video = {
-          ...displayMediaOptions.video,
-          displaySurface: 'monitor'
-        };
-      } else if (type === 'window') {
-        displayMediaOptions.video = {
-          ...displayMediaOptions.video,
-          displaySurface: 'window'
-        };
-      } else if (type === 'tab') {
-        displayMediaOptions.video = {
-          ...displayMediaOptions.video,
-          displaySurface: 'browser'
-        };
+  useEffect(() => {
+    if (open) {
+      loadSources();
+    }
+  }, [open]);
+
+  const loadSources = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const availableSources = await getSources();
+      
+      if (availableSources === null) {
+        // Если не Electron или ошибка получения источников,
+        // используем стандартный getDisplayMedia
+        const stream = await captureSource();
+        onSelect(stream);
+        onClose();
+        return;
       }
 
-      const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+      setSources(availableSources);
+    } catch (err) {
+      console.error('Error loading sources:', err);
+      setError('Failed to load screen share sources');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSourceSelect = async (source) => {
+    try {
+      const stream = await captureSource(source.id);
       onSelect(stream);
       onClose();
     } catch (error) {
-      console.error('Error starting screen share:', error);
-      onClose();
+      console.error('Error selecting source:', error);
+      setError('Failed to start screen sharing');
     }
   };
 
@@ -113,6 +161,7 @@ const ScreenShareModal = ({ open, onClose, onSelect }) => {
       open={open}
       onClose={onClose}
       sx={styles.dialog}
+      maxWidth="lg"
     >
       <DialogTitle sx={styles.dialogTitle}>
         <Box display="flex" alignItems="center" justifyContent="space-between">
@@ -127,38 +176,48 @@ const ScreenShareModal = ({ open, onClose, onSelect }) => {
         <Typography sx={styles.description}>
           Choose what you want to share
         </Typography>
-        <List sx={styles.list}>
-          <ListItem sx={styles.listItem} onClick={() => handleSelect('screen')}>
-            <ListItemIcon sx={styles.listItemIcon}>
-              <ScreenShare />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Entire Screen" 
-              secondary="Share your entire screen"
-              sx={styles.listItemText}
-            />
-          </ListItem>
-          <ListItem sx={styles.listItem} onClick={() => handleSelect('window')}>
-            <ListItemIcon sx={styles.listItemIcon}>
-              <Window />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Application Window" 
-              secondary="Share a specific window"
-              sx={styles.listItemText}
-            />
-          </ListItem>
-          <ListItem sx={styles.listItem} onClick={() => handleSelect('tab')}>
-            <ListItemIcon sx={styles.listItemIcon}>
-              <Tab />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Browser Tab" 
-              secondary="Share a browser tab"
-              sx={styles.listItemText}
-            />
-          </ListItem>
-        </List>
+
+        {loading ? (
+          <Box sx={styles.loading}>
+            <CircularProgress size={32} />
+          </Box>
+        ) : error ? (
+          <Typography sx={styles.noSources}>
+            {error}
+          </Typography>
+        ) : sources.length === 0 ? (
+          <Typography sx={styles.noSources}>
+            No sources available
+          </Typography>
+        ) : (
+          <Box sx={styles.sourceGrid}>
+            {sources.map((source) => (
+              <Card key={source.id} sx={styles.sourceCard}>
+                <CardActionArea onClick={() => handleSourceSelect(source)}>
+                  <CardMedia
+                    component="img"
+                    sx={styles.thumbnail}
+                    image={source.thumbnail}
+                    alt={source.name}
+                  />
+                  <CardContent sx={styles.sourceCardContent}>
+                    <Typography sx={styles.sourceName}>
+                      {source.type === 'screen' ? (
+                        <Monitor sx={{ fontSize: 16 }} />
+                      ) : (
+                        <Window sx={{ fontSize: 16 }} />
+                      )}
+                      {source.name}
+                    </Typography>
+                    <Typography sx={styles.sourceType}>
+                      {source.type === 'screen' ? 'Screen' : 'Window'}
+                    </Typography>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            ))}
+          </Box>
+        )}
       </DialogContent>
     </Dialog>
   );
