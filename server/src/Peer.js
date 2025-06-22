@@ -9,6 +9,7 @@ class Peer {
         this.consumers = new Map();
         this.speaking = false;
         this.muted = false;
+        this.isAudioEnabled = true; // Default audio enabled state
         this.screenProducers = new Map(); // Separate map for screen sharing producers
     }
 
@@ -102,6 +103,14 @@ class Peer {
         this.transports.clear();
         this.producers.clear();
         this.consumers.clear();
+    }
+
+    setAudioEnabled(enabled) {
+        this.isAudioEnabled = enabled;
+    }
+
+    isAudioEnabled() {
+        return this.isAudioEnabled;
     }
 }
 

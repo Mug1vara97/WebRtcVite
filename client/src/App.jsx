@@ -1326,8 +1326,9 @@ function App() {
       socket.on('connect', () => {
         console.log('Socket connected successfully');
         setIsConnected(true);
-        // Set initial mute state
+        // Set initial states
         socket.emit('muteState', { isMuted: false });
+        socket.emit('audioState', { isEnabled: isAudioEnabled });
       });
 
       socket.on('connect_error', (error) => {

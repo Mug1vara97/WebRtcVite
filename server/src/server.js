@@ -173,7 +173,12 @@ io.on('connection', async (socket) => {
             // Get existing peers
             const existingPeers = Array.from(room.getPeers().values())
                 .filter(p => p.id !== socket.id)
-                .map(p => ({ id: p.id, name: p.name }));
+                .map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    isMuted: p.isMuted(),
+                    isAudioEnabled: p.isAudioEnabled
+                }));
 
             // Get existing producers
             const existingProducers = [];
@@ -197,7 +202,9 @@ io.on('connection', async (socket) => {
             // Notify other peers about the new peer
             socket.to(roomId).emit('peerJoined', {
                 peerId: peer.id,
-                name: peer.name
+                name: peer.name,
+                isMuted: peer.isMuted(),
+                isAudioEnabled: peer.isAudioEnabled()
             });
 
             console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
@@ -825,6 +832,9 @@ io.on('connection', async (socket) => {
     socket.on('audioState', ({ isEnabled }) => {
         const peer = peers.get(socket.id);
         if (peer) {
+            // Update peer's audio state
+            peer.setAudioEnabled(isEnabled);
+            
             // Broadcast to all peers in the room except sender
             socket.to(peer.roomId).emit('peerAudioStateChanged', {
                 peerId: socket.id,
