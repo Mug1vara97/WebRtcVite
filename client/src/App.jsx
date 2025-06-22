@@ -44,7 +44,6 @@ import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
 import { NoiseSuppressionManager } from './utils/noiseSuppression';
 import voiceDetectorWorklet from './utils/voiceDetector.worklet.js?url';
-import ScreenShareModal from './components/ScreenShareModal';
 
 
 const config = {
@@ -997,7 +996,6 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
-  const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
 
 
   const socketRef = useRef();
@@ -2115,7 +2113,7 @@ function App() {
     }
   };
 
-  const startScreenSharing = async (stream) => {
+  const startScreenSharing = async () => {
     try {
       if (!producerTransportRef.current) {
         throw new Error('Transport not ready');
@@ -2126,16 +2124,32 @@ function App() {
         await stopScreenSharing();
       }
 
+      console.log('Requesting screen sharing access...');
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: 'always',
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1280, max: 1280 },
+          height: { ideal: 720, max: 720 },
+          aspectRatio: { ideal: 16/9 },
+          displaySurface: 'monitor',
+          resizeMode: 'crop-and-scale'
+        },
+        audio: false
+      });
+
+      console.log('Screen sharing access granted');
+
       // Handle stream stop
-      stream.getVideoTracks()[0].onended = () => {
+      screenStream.getVideoTracks()[0].onended = () => {
         console.log('Screen sharing stopped by user');
         stopScreenSharing();
       };
 
       // Set stream first
-      setScreenStream(stream);
+      setScreenStream(screenStream);
 
-      const videoTrack = stream.getVideoTracks()[0];
+      const videoTrack = screenStream.getVideoTracks()[0];
       if (!videoTrack) {
         throw new Error('No video track available');
       }
@@ -2178,8 +2192,8 @@ function App() {
     } catch (error) {
       console.error('Error starting screen share:', error);
       // Make sure to clean up if there's an error
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
       }
       setScreenStream(null);
       setScreenProducer(null);
@@ -3022,7 +3036,7 @@ function App() {
             <Box sx={styles.controlGroup}>
               <IconButton
                 sx={styles.iconButton}
-                onClick={isScreenSharing ? stopScreenSharing : () => setIsScreenShareModalOpen(true)}
+                onClick={isScreenSharing ? stopScreenSharing : startScreenSharing}
                 title={isScreenSharing ? "Stop sharing" : "Share screen"}
               >
                 {isScreenSharing ? <StopScreenShare /> : <ScreenShare />}
@@ -3048,13 +3062,6 @@ function App() {
           </Button>
         </Box>
       </Box>
-
-      {/* Add ScreenShareModal */}
-      <ScreenShareModal
-        open={isScreenShareModalOpen}
-        onClose={() => setIsScreenShareModalOpen(false)}
-        onSelect={startScreenSharing}
-      />
     </MuteProvider>
   );
 }
