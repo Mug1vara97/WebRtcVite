@@ -1583,7 +1583,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = false;
+          audio.muted = !isAudioEnabled;
 
           // Устанавливаем вывод на текущий выбранный режим
           if (isMobile) {
@@ -1599,11 +1599,12 @@ function App() {
           
           // Create gain node
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = 1.0;
+          gainNode.gain.value = isAudioEnabled ? 1.0 : 0.0;
 
           // Connect nodes только для анализа голоса
           source.connect(analyser);
           analyser.connect(gainNode);
+          gainNode.connect(audioContext.destination);
 
           // Store references
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
@@ -1612,7 +1613,7 @@ function App() {
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
           // Start voice detection
-          detectSpeaking(analyser, producer.producerSocketId);
+          detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
@@ -2747,7 +2748,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = false;
+          audio.muted = !isAudioEnabled;
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
@@ -2759,10 +2760,11 @@ function App() {
           const analyser = createAudioAnalyser(audioContext);
           
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = 1.0;
+          gainNode.gain.value = isAudioEnabled ? 1.0 : 0.0;
 
           source.connect(analyser);
           analyser.connect(gainNode);
+          gainNode.connect(audioContext.destination);
 
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
@@ -2811,18 +2813,31 @@ function App() {
       socketRef.current.emit('audioState', { isEnabled: newState });
     }
 
-    // Отключаем/включаем все аудио элементы
+    // Mute/unmute all audio elements and gain nodes
     audioRef.current.forEach((peerAudio) => {
       if (peerAudio instanceof HTMLAudioElement) {
+        // For HTML Audio elements
         peerAudio.muted = !newState;
-      } else if (peerAudio instanceof Map) {
-        const gainNode = gainNodesRef.current.get(peerAudio.id);
-        if (gainNode) {
-          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
-        }
       }
     });
-  }, [isAudioEnabled, volumes]);
+
+    // Handle gain nodes separately
+    gainNodesRef.current.forEach((gainNode) => {
+      if (gainNode) {
+        // Use exponential ramp to avoid clicks
+        gainNode.gain.setTargetAtTime(
+          newState ? 1.0 : 0.0,
+          audioContextRef.current.currentTime,
+          0.015
+        );
+      }
+    });
+
+    // If audio is being enabled, try to resume AudioContext
+    if (newState && audioContextRef.current?.state === 'suspended') {
+      audioContextRef.current.resume().catch(console.error);
+    }
+  }, [isAudioEnabled]);
 
   // Add initial audio state when joining
   useEffect(() => {
