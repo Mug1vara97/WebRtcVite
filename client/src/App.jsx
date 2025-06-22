@@ -872,47 +872,16 @@ const VideoOverlay = React.memo(({
           className={`volumeControl ${
             volume === 0
               ? 'muted'
-              : isSpeaking && !isMuted
+              : isSpeaking
               ? 'speaking'
               : 'silent'
           }`}
-          sx={{
-            position: 'absolute',
-            bottom: 8,
-            right: 8,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            borderRadius: '50%',
-            transition: 'all 0.2s ease',
-            zIndex: 10,
-            cursor: 'pointer',
-            '&.muted': {
-              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
-              '&:hover': {
-                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
-                transform: 'scale(1.1)'
-              },
-              '& .MuiSvgIcon-root': {
-                color: '#ed4245'
-              }
-            },
-            '&.speaking': {
-              backgroundColor: 'transparent',
-              '& .MuiSvgIcon-root': {
-                color: '#3ba55c'
-              }
-            },
-            '&.silent': {
-              backgroundColor: 'transparent',
-              '& .MuiSvgIcon-root': {
-                color: '#B5BAC1'
-              }
-            }
-          }}
+          sx={styles.volumeIcon}
         >
-          {volume === 0 || isMuted ? (
-            <VolumeOff sx={{ fontSize: 20 }} />
+          {volume === 0 ? (
+            <VolumeOffRounded sx={{ fontSize: 20 }} />
           ) : (
-            <VolumeUp sx={{ fontSize: 20 }} />
+            <VolumeUpRounded sx={{ fontSize: 20 }} />
           )}
         </IconButton>
       )}
