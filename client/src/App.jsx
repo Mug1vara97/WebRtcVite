@@ -996,6 +996,8 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
+  const masterGainNodeRef = useRef(null);
+  const isAudioEnabledRef = useRef(isAudioEnabled);
 
 
   const socketRef = useRef();
@@ -1590,7 +1592,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = !isAudioEnabled; // Set initial mute state
+          audio.muted = !isAudioEnabledRef.current; // Use ref for current state
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
@@ -1605,7 +1607,7 @@ function App() {
           
           // Create gain node
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = isAudioEnabled ? 1.0 : 0.0; // Set initial gain state
+          gainNode.gain.value = isAudioEnabledRef.current ? 1.0 : 0.0; // Use ref for current state
 
           // Connect nodes только для анализа голоса
           source.connect(analyser);
@@ -2754,7 +2756,7 @@ function App() {
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = false;
+          audio.muted = !isAudioEnabledRef.current; // Use ref for current state
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
@@ -2766,10 +2768,11 @@ function App() {
           const analyser = createAudioAnalyser(audioContext);
           
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = 1.0;
+          gainNode.gain.value = isAudioEnabledRef.current ? 1.0 : 0.0; // Use ref for current state
 
           source.connect(analyser);
           analyser.connect(gainNode);
+          gainNode.connect(audioContext.destination);
 
           analyserNodesRef.current.set(producer.producerSocketId, analyser);
           gainNodesRef.current.set(producer.producerSocketId, gainNode);
@@ -2812,19 +2815,20 @@ function App() {
   const toggleAudio = useCallback(() => {
     const newState = !isAudioEnabled;
     setIsAudioEnabled(newState);
-  
+    isAudioEnabledRef.current = newState; // Update ref immediately
+
     // Emit audio state change
     if (socketRef.current) {
       socketRef.current.emit('audioState', { isEnabled: newState });
     }
-  
+
     // Mute/unmute all audio elements
     audioRef.current.forEach((audio) => {
       if (audio instanceof HTMLAudioElement) {
         audio.muted = !newState;
       }
     });
-  
+
     // Mute/unmute all gain nodes
     gainNodesRef.current.forEach((gainNode) => {
       if (gainNode) {
@@ -2857,6 +2861,11 @@ function App() {
       socket.off('peerAudioStateChanged');
     };
   }, [socketRef.current]);
+
+  // Add effect to update isAudioEnabledRef
+  useEffect(() => {
+    isAudioEnabledRef.current = isAudioEnabled;
+  }, [isAudioEnabled]);
 
   if (!isJoined) {
     return (
