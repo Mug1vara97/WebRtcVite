@@ -812,9 +812,10 @@ const VideoOverlay = React.memo(({
   isSpeaking,
   isAudioEnabled,
   isLocal,
-  onVolumeClick,
   volume,
-  children
+  children,
+  toggleUserVolume,
+  peerId
 }) => {
   return (
     <div style={{
@@ -860,7 +861,7 @@ const VideoOverlay = React.memo(({
       {/* Кнопка управления громкостью (только для удаленных пользователей) */}
       {!isLocal && (
         <IconButton
-          onClick={onVolumeClick}
+          onClick={() => toggleUserVolume(peerId)}
           className={`volumeControl ${
             volume === 0
               ? 'muted'
@@ -932,7 +933,8 @@ const VideoView = React.memo(({
   isLocal,
   peerId,
   volume,
-  children 
+  children,
+  toggleUserVolume 
 }) => {
   return (
     <div style={{
@@ -950,8 +952,9 @@ const VideoView = React.memo(({
         isSpeaking={isSpeaking}
         isAudioEnabled={isAudioEnabled}
         isLocal={isLocal}
-        onVolumeClick={() => toggleUserVolume(peerId)}
         volume={volume}
+        peerId={peerId}
+        toggleUserVolume={toggleUserVolume}
       >
         {children}
       </VideoOverlay>
@@ -965,7 +968,9 @@ const VideoView = React.memo(({
     prevProps.isSpeaking === nextProps.isSpeaking &&
     prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
     prevProps.volume === nextProps.volume &&
-    prevProps.children === nextProps.children
+    prevProps.children === nextProps.children &&
+    prevProps.toggleUserVolume === nextProps.toggleUserVolume &&
+    prevProps.peerId === nextProps.peerId
   );
 });
 
@@ -2951,6 +2956,7 @@ function App() {
                   isLocal={true}
                   peerId={socketRef.current?.id}
                   volume={100}
+                  toggleUserVolume={toggleUserVolume}
                 />
               ) : (
                 <div style={{ 
@@ -2990,6 +2996,7 @@ function App() {
                     isLocal={false}
                     peerId={peer.id}
                     volume={volumes.get(peer.id) || 100}
+                    toggleUserVolume={toggleUserVolume}
                   />
                 ) : (
                   <div style={{ 
@@ -3010,8 +3017,9 @@ function App() {
                       isSpeaking={speakingStates.get(peer.id)}
                       isAudioEnabled={audioStates.get(peer.id)}
                       isLocal={false}
-                      onVolumeClick={() => toggleUserVolume(peer.id)}
                       volume={volumes.get(peer.id) || 100}
+                      peerId={peer.id}
+                      toggleUserVolume={toggleUserVolume}
                     />
                   </div>
                 )}
