@@ -812,10 +812,9 @@ const VideoOverlay = React.memo(({
   isSpeaking,
   isAudioEnabled,
   isLocal,
+  onVolumeClick,
   volume,
-  children,
-  toggleUserVolume,
-  peerId
+  children
 }) => {
   return (
     <div style={{
@@ -861,27 +860,50 @@ const VideoOverlay = React.memo(({
       {/* Кнопка управления громкостью (только для удаленных пользователей) */}
       {!isLocal && (
         <IconButton
-          onClick={() => {
-            console.log('Toggling volume for peer:', peerId, 'Current volume:', volume);
-            if (typeof toggleUserVolume === 'function') {
-              toggleUserVolume(peerId);
-            } else {
-              console.error('toggleUserVolume is not a function:', toggleUserVolume);
-            }
-          }}
-          className={`volumeControl ${volume === 0 ? 'muted' : ''}`}
+          onClick={onVolumeClick}
+          className={`volumeControl ${
+            volume === 0
+              ? 'muted'
+              : isSpeaking
+              ? 'speaking'
+              : 'silent'
+          }`}
           sx={{
-            ...styles.volumeIcon,
-            backgroundColor: volume === 0 ? 'rgba(237, 66, 69, 0.1)' : 'transparent',
-            '&:hover': {
-              backgroundColor: volume === 0 ? 'rgba(237, 66, 69, 0.2)' : 'rgba(0, 0, 0, 0.5)'
+            position: 'absolute',
+            bottom: 8,
+            right: 8,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderRadius: '50%',
+            transition: 'all 0.2s ease',
+            zIndex: 10,
+            '&.muted': {
+              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
+              '&:hover': {
+                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
+                transform: 'scale(1.1)'
+              },
+              '& .MuiSvgIcon-root': {
+                color: '#ed4245'
+              }
+            },
+            '&.speaking': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#3ba55c'
+              }
+            },
+            '&.silent': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#B5BAC1'
+              }
             }
           }}
         >
           {volume === 0 ? (
-            <VolumeOffRounded sx={{ fontSize: 20, color: '#ed4245' }} />
+            <VolumeOff sx={{ fontSize: 20 }} />
           ) : (
-            <VolumeUpRounded sx={{ fontSize: 20, color: isSpeaking ? '#3ba55c' : '#B5BAC1' }} />
+            <VolumeUp sx={{ fontSize: 20 }} />
           )}
         </IconButton>
       )}
@@ -908,13 +930,10 @@ const VideoView = React.memo(({
   isSpeaking,
   isAudioEnabled,
   isLocal,
-  peerId,
+  onVolumeClick,
   volume,
-  children,
-  toggleUserVolume 
+  children 
 }) => {
-  console.log('VideoView props:', { peerName, peerId, volume, toggleUserVolume: !!toggleUserVolume });
-  
   return (
     <div style={{
       position: 'relative',
@@ -931,9 +950,8 @@ const VideoView = React.memo(({
         isSpeaking={isSpeaking}
         isAudioEnabled={isAudioEnabled}
         isLocal={isLocal}
+        onVolumeClick={onVolumeClick}
         volume={volume}
-        peerId={peerId}
-        toggleUserVolume={toggleUserVolume}
       >
         {children}
       </VideoOverlay>
@@ -947,9 +965,7 @@ const VideoView = React.memo(({
     prevProps.isSpeaking === nextProps.isSpeaking &&
     prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
     prevProps.volume === nextProps.volume &&
-    prevProps.children === nextProps.children &&
-    prevProps.toggleUserVolume === nextProps.toggleUserVolume &&
-    prevProps.peerId === nextProps.peerId
+    prevProps.children === nextProps.children
   );
 });
 
@@ -957,70 +973,6 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [volumes, setVolumes] = useState(new Map());
-  const volumesRef = useRef(new Map());
-
-  // Individual volume control for each user
-  const toggleUserVolume = useCallback((peerId) => {
-    console.log('toggleUserVolume called with peerId:', peerId);
-    console.log('Current volumes:', volumesRef.current);
-    console.log('Current gain nodes:', gainNodesRef.current);
-    console.log('Current audio elements:', audioRef.current);
-    
-    const currentVolume = volumesRef.current.get(peerId) ?? 100;
-    const newVolume = currentVolume === 0 ? 100 : 0;
-    console.log('Toggling volume from', currentVolume, 'to', newVolume);
-    
-    // Update gain node
-    const gainNode = gainNodesRef.current.get(peerId);
-    if (gainNode) {
-      console.log('Found gain node for peer:', peerId);
-      gainNode.gain.value = newVolume / 100;
-    } else {
-      console.warn('No gain node found for peer:', peerId);
-    }
-
-    // Update audio element muted state
-    const audioElement = audioRef.current.get(peerId);
-    if (audioElement instanceof HTMLAudioElement) {
-      console.log('Found audio element for peer:', peerId);
-      audioElement.muted = newVolume === 0;
-    } else {
-      console.warn('No audio element found for peer:', peerId);
-    }
-
-    // Update volume state
-    volumesRef.current.set(peerId, newVolume);
-    setVolumes(new Map(volumesRef.current));
-  }, []);
-
-  // Инициализация громкости для новых пиров
-  useEffect(() => {
-    peers.forEach((peer) => {
-      if (!volumesRef.current.has(peer.id)) {
-        volumesRef.current.set(peer.id, 100);
-        setVolumes(new Map(volumesRef.current));
-      }
-    });
-  }, [peers]);
-
-  // Очистка громкости при отключении пира
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket) return;
-
-    const handlePeerDisconnected = (peerId) => {
-      volumesRef.current.delete(peerId);
-      setVolumes(new Map(volumesRef.current));
-    };
-
-    socket.on('peerDisconnected', handlePeerDisconnected);
-
-    return () => {
-      socket.off('peerDisconnected', handlePeerDisconnected);
-    };
-  }, [socketRef.current]);
-
   const [useEarpiece, setUseEarpiece] = useState(true);
   const isMobile = useMemo(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent), []);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -1030,6 +982,7 @@ function App() {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [peers, setPeers] = useState(new Map());
   const [error, setError] = useState('');
+  const [volumes, setVolumes] = useState(new Map());
   const [isJoining, setIsJoining] = useState(false);
   const [speakingStates, setSpeakingStates] = useState(new Map());
   const [audioStates, setAudioStates] = useState(new Map()); // Состояния аудио для всех пиров
@@ -1043,6 +996,7 @@ function App() {
   const [noiseSuppressionMode, setNoiseSuppressionMode] = useState('rnnoise');
   const [noiseSuppressMenuAnchor, setNoiseSuppressMenuAnchor] = useState(null);
   const noiseSuppressionRef = useRef(null);
+  const masterGainNodeRef = useRef(null);
   const isAudioEnabledRef = useRef(isAudioEnabled);
 
 
@@ -1804,7 +1758,17 @@ function App() {
     };
   }, [socketRef.current]);
 
-
+  const handleVolumeChange = (peerId, newValue) => {
+    const gainNode = gainNodesRef.current.get(peerId);
+    if (gainNode) {
+      gainNode.gain.value = newValue === 0 ? 0 : 1;
+      setVolumes(prev => {
+        const newVolumes = new Map(prev);
+        newVolumes.set(peerId, newValue);
+        return newVolumes;
+      });
+    }
+  };
 
   const initializeDevice = async (routerRtpCapabilities) => {
     try {
@@ -2903,8 +2867,6 @@ function App() {
     isAudioEnabledRef.current = isAudioEnabled;
   }, [isAudioEnabled]);
 
-
-
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -2977,9 +2939,6 @@ function App() {
                   isSpeaking={speakingStates.get(socketRef.current?.id)}
                   isAudioEnabled={isAudioEnabled}
                   isLocal={true}
-                  peerId={socketRef.current?.id}
-                  volume={100}
-                  toggleUserVolume={toggleUserVolume}
                 />
               ) : (
                 <div style={{ 
@@ -3000,7 +2959,6 @@ function App() {
                     isSpeaking={speakingStates.get(socketRef.current?.id)}
                     isAudioEnabled={isAudioEnabled}
                     isLocal={true}
-                    volume={100}
                   />
                 </div>
               )}
@@ -3017,9 +2975,8 @@ function App() {
                     isSpeaking={speakingStates.get(peer.id)}
                     isAudioEnabled={audioStates.get(peer.id)}
                     isLocal={false}
-                    peerId={peer.id}
-                    volume={volumesRef.current.get(peer.id) ?? 100}
-                    toggleUserVolume={toggleUserVolume}
+                    onVolumeClick={() => handleVolumeChange(peer.id, volumes.get(peer.id) || 100)}
+                    volume={volumes.get(peer.id) || 100}
                   />
                 ) : (
                   <div style={{ 
@@ -3040,12 +2997,9 @@ function App() {
                       isSpeaking={speakingStates.get(peer.id)}
                       isAudioEnabled={audioStates.get(peer.id)}
                       isLocal={false}
-                      volume={volumesRef.current.get(peer.id) ?? 100}
-                      peerId={peer.id}
-                      toggleUserVolume={toggleUserVolume}
-                    >
-                      {/* Добавляем пустой children prop для консистентности */}
-                    </VideoOverlay>
+                      onVolumeClick={() => handleVolumeChange(peer.id, volumes.get(peer.id) || 100)}
+                      volume={volumes.get(peer.id) || 100}
+                    />
                   </div>
                 )}
               </Box>
