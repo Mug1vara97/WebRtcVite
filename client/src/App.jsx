@@ -806,120 +806,120 @@ const VideoPlayer = React.memo(({ stream }) => {
 }, (prevProps, nextProps) => prevProps.stream === nextProps.stream);
 
 // Компонент оверлея (перерисовывается отдельно от видео)
-const VideoOverlay = React.memo(({
-    peerName,
-    isMuted,
-    isSpeaking,
-    isAudioEnabled,
-    isLocal,
-    volume,
-    onVolumeClick,
-    children
+const VideoOverlay = React.memo(({ 
+  peerName, 
+  isMuted, 
+  isSpeaking,
+  isAudioEnabled,
+  isLocal,
+  onVolumeClick,
+  volume,
+  children
 }) => {
-    return (
-        <div style={{
+  return (
+    <div style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 2,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'flex-end',
+      padding: '12px',
+      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
+    }}>
+      {/* Основной блок с информацией */}
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        color: '#ffffff',
+        fontSize: '14px',
+        fontWeight: 500,
+        padding: '4px 8px',
+        borderRadius: '4px',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        width: 'fit-content',
+        mb: 1
+      }}>
+        {isMuted ? (
+          <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
+        ) : isSpeaking ? (
+          <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
+        ) : (
+          <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
+        )}
+        {!isAudioEnabled && (
+          <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
+        )}
+        {peerName}
+      </Box>
+      
+      {/* Кнопка управления громкостью (только для удаленных пользователей) */}
+      {!isLocal && (
+        <IconButton
+          onClick={onVolumeClick}
+          className={`volumeControl ${
+            volume === 0
+              ? 'muted'
+              : isSpeaking
+              ? 'speaking'
+              : 'silent'
+          }`}
+          sx={{
             position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 2,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-            padding: '12px',
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
-        }}>
-            {/* Основной блок с информацией */}
-            <Box sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                color: '#ffffff',
-                fontSize: '14px',
-                fontWeight: 500,
-                padding: '4px 8px',
-                borderRadius: '4px',
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                width: 'fit-content',
-                mb: 1
-            }}>
-                {isMuted ? (
-                    <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                ) : isSpeaking ? (
-                    <Mic sx={{ fontSize: 16, color: '#3ba55c' }} />
-                ) : (
-                    <Mic sx={{ fontSize: 16, color: '#B5BAC1' }} />
-                )}
-                {!isAudioEnabled && (
-                    <HeadsetOff sx={{ fontSize: 16, color: '#ed4245' }} />
-                )}
-                {peerName}
-            </Box>
-
-            {/* Кнопка управления громкостью (только для удаленных пользователей) */}
-            {!isLocal && (
-                <IconButton
-                    onClick={onVolumeClick}
-                    className={`volumeControl ${
-                        !isAudioEnabled || volume === 0
-                            ? 'muted'
-                            : isSpeaking
-                            ? 'speaking'
-                            : 'silent'
-                    }`}
-                    sx={{
-                        position: 'absolute',
-                        bottom: 8,
-                        right: 8,
-                        backgroundColor: 'rgba(0,0,0,0.5)',
-                        borderRadius: '50%',
-                        transition: 'all 0.2s ease',
-                        zIndex: 10,
-                        '&.muted': {
-                            backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
-                            '&:hover': {
-                                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
-                                transform: 'scale(1.1)'
-                            },
-                            '& .MuiSvgIcon-root': {
-                                color: '#ed4245'
-                            }
-                        },
-                        '&.speaking': {
-                            backgroundColor: 'transparent',
-                            '& .MuiSvgIcon-root': {
-                                color: '#3ba55c'
-                            }
-                        },
-                        '&.silent': {
-                            backgroundColor: 'transparent',
-                            '& .MuiSvgIcon-root': {
-                                color: '#B5BAC1'
-                            }
-                        }
-                    }}
-                >
-                    {!isAudioEnabled || volume === 0 ? (
-                        <VolumeOff sx={{ fontSize: 20 }} />
-                    ) : (
-                        <VolumeUp sx={{ fontSize: 20 }} />
-                    )}
-                </IconButton>
-            )}
-
-            {children}
-        </div>
-    );
+            bottom: 8,
+            right: 8,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderRadius: '50%',
+            transition: 'all 0.2s ease',
+            zIndex: 10,
+            '&.muted': {
+              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
+              '&:hover': {
+                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
+                transform: 'scale(1.1)'
+              },
+              '& .MuiSvgIcon-root': {
+                color: '#ed4245'
+              }
+            },
+            '&.speaking': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#3ba55c'
+              }
+            },
+            '&.silent': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#B5BAC1'
+              }
+            }
+          }}
+        >
+          {volume === 0 ? (
+            <VolumeOff sx={{ fontSize: 20 }} />
+          ) : (
+            <VolumeUp sx={{ fontSize: 20 }} />
+          )}
+        </IconButton>
+      )}
+      
+      {children}
+    </div>
+  );
 }, (prevProps, nextProps) => {
-    return (
-        prevProps.peerName === nextProps.peerName &&
-        prevProps.isMuted === nextProps.isMuted &&
-        prevProps.isSpeaking === nextProps.isSpeaking &&
-        prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
-        prevProps.volume === nextProps.volume &&
-        prevProps.children === nextProps.children
-    );
+  return (
+    prevProps.peerName === nextProps.peerName &&
+    prevProps.isMuted === nextProps.isMuted &&
+    prevProps.isSpeaking === nextProps.isSpeaking &&
+    prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
+    prevProps.volume === nextProps.volume &&
+    prevProps.children === nextProps.children
+  );
 });
 
 // Оптимизированный компонент для отображения видео
@@ -1749,18 +1749,17 @@ function App() {
     };
   }, [socketRef.current]);
 
-  const handleVolumeChange = useCallback((peerId, newValue) => {
+  const handleVolumeChange = (peerId, newValue) => {
     const gainNode = gainNodesRef.current.get(peerId);
     if (gainNode) {
-        // Применяем новое значение громкости только если аудио включено глобально
-        gainNode.gain.value = isAudioEnabled ? newValue / 100 : 0;
-        setVolumes(prev => {
-            const newVolumes = new Map(prev);
-            newVolumes.set(peerId, newValue);
-            return newVolumes;
-        });
+      gainNode.gain.value = newValue === 0 ? 0 : 1;
+      setVolumes(prev => {
+        const newVolumes = new Map(prev);
+        newVolumes.set(peerId, newValue);
+        return newVolumes;
+      });
     }
-}, [isAudioEnabled]);
+  };
 
   const initializeDevice = async (routerRtpCapabilities) => {
     try {
@@ -2809,34 +2808,21 @@ function App() {
 
     // Emit audio state change
     if (socketRef.current) {
-        socketRef.current.emit('audioState', { isEnabled: newState });
+      socketRef.current.emit('audioState', { isEnabled: newState });
     }
 
     // Отключаем/включаем все аудио элементы
     audioRef.current.forEach((peerAudio) => {
-        if (peerAudio instanceof HTMLAudioElement) {
-            peerAudio.muted = !newState;
-        }
-    });
-
-    // Также обновляем все gain nodes для консистентности UI
-    gainNodesRef.current.forEach((gainNode) => {
+      if (peerAudio instanceof HTMLAudioElement) {
+        peerAudio.muted = !newState;
+      } else if (peerAudio instanceof Map) {
+        const gainNode = gainNodesRef.current.get(peerAudio.id);
         if (gainNode) {
-            gainNode.gain.value = newState ? (volumes.get(gainNode.id) || 100) / 100 : 0;
+          gainNode.gain.value = newState ? (volumes.get(peerAudio.id) || 100) / 100 : 0;
         }
+      }
     });
-
-    // Если звук выключен, сбрасываем все состояния говорения
-    if (!newState) {
-        setSpeakingStates(prev => {
-            const newStates = new Map();
-            prev.forEach((_, peerId) => {
-                newStates.set(peerId, false);
-            });
-            return newStates;
-        });
-    }
-}, [isAudioEnabled, volumes]);
+  }, [isAudioEnabled, volumes]);
 
   // Add initial audio state when joining
   useEffect(() => {
