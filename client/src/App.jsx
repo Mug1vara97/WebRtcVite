@@ -2812,19 +2812,19 @@ function App() {
   const toggleAudio = useCallback(() => {
     const newState = !isAudioEnabled;
     setIsAudioEnabled(newState);
-
+  
     // Emit audio state change
     if (socketRef.current) {
       socketRef.current.emit('audioState', { isEnabled: newState });
     }
-
+  
     // Mute/unmute all audio elements
-    audioRef.current.forEach((audio, peerId) => {
+    audioRef.current.forEach((audio) => {
       if (audio instanceof HTMLAudioElement) {
         audio.muted = !newState;
       }
     });
-
+  
     // Mute/unmute all gain nodes
     gainNodesRef.current.forEach((gainNode) => {
       if (gainNode) {
