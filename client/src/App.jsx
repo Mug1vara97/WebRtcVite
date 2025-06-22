@@ -958,43 +958,69 @@ function App() {
   const [isJoined, setIsJoined] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volumes, setVolumes] = useState(new Map());
+  const volumesRef = useRef(new Map());
 
   // Individual volume control for each user
   const toggleUserVolume = useCallback((peerId) => {
     console.log('toggleUserVolume called with peerId:', peerId);
-    console.log('Current volumes:', volumes);
+    console.log('Current volumes:', volumesRef.current);
     console.log('Current gain nodes:', gainNodesRef.current);
     console.log('Current audio elements:', audioRef.current);
     
-    setVolumes(prev => {
-      const currentVolume = prev.get(peerId) || 100;
-      const newVolume = currentVolume === 0 ? 100 : 0;
-      console.log('Toggling volume from', currentVolume, 'to', newVolume);
-      
-      // Update gain node
-      const gainNode = gainNodesRef.current.get(peerId);
-      if (gainNode) {
-        console.log('Found gain node for peer:', peerId);
-        gainNode.gain.value = newVolume / 100;
-      } else {
-        console.warn('No gain node found for peer:', peerId);
-      }
+    const currentVolume = volumesRef.current.get(peerId) ?? 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
+    console.log('Toggling volume from', currentVolume, 'to', newVolume);
+    
+    // Update gain node
+    const gainNode = gainNodesRef.current.get(peerId);
+    if (gainNode) {
+      console.log('Found gain node for peer:', peerId);
+      gainNode.gain.value = newVolume / 100;
+    } else {
+      console.warn('No gain node found for peer:', peerId);
+    }
 
-      // Update audio element muted state
-      const audioElement = audioRef.current.get(peerId);
-      if (audioElement instanceof HTMLAudioElement) {
-        console.log('Found audio element for peer:', peerId);
-        audioElement.muted = newVolume === 0;
-      } else {
-        console.warn('No audio element found for peer:', peerId);
-      }
+    // Update audio element muted state
+    const audioElement = audioRef.current.get(peerId);
+    if (audioElement instanceof HTMLAudioElement) {
+      console.log('Found audio element for peer:', peerId);
+      audioElement.muted = newVolume === 0;
+    } else {
+      console.warn('No audio element found for peer:', peerId);
+    }
 
-      const newVolumes = new Map(prev);
-      newVolumes.set(peerId, newVolume);
-      console.log('Updated volumes:', newVolumes);
-      return newVolumes;
-    });
+    // Update volume state
+    volumesRef.current.set(peerId, newVolume);
+    setVolumes(new Map(volumesRef.current));
   }, []);
+
+  // Инициализация громкости для новых пиров
+  useEffect(() => {
+    peers.forEach((peer) => {
+      if (!volumesRef.current.has(peer.id)) {
+        volumesRef.current.set(peer.id, 100);
+        setVolumes(new Map(volumesRef.current));
+      }
+    });
+  }, [peers]);
+
+  // Очистка громкости при отключении пира
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    const handlePeerDisconnected = (peerId) => {
+      volumesRef.current.delete(peerId);
+      setVolumes(new Map(volumesRef.current));
+    };
+
+    socket.on('peerDisconnected', handlePeerDisconnected);
+
+    return () => {
+      socket.off('peerDisconnected', handlePeerDisconnected);
+    };
+  }, [socketRef.current]);
+
   const [useEarpiece, setUseEarpiece] = useState(true);
   const isMobile = useMemo(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent), []);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -2992,7 +3018,7 @@ function App() {
                     isAudioEnabled={audioStates.get(peer.id)}
                     isLocal={false}
                     peerId={peer.id}
-                    volume={volumes.get(peer.id) || 100}
+                    volume={volumesRef.current.get(peer.id) ?? 100}
                     toggleUserVolume={toggleUserVolume}
                   />
                 ) : (
@@ -3014,7 +3040,7 @@ function App() {
                       isSpeaking={speakingStates.get(peer.id)}
                       isAudioEnabled={audioStates.get(peer.id)}
                       isLocal={false}
-                      volume={volumes.get(peer.id) || 100}
+                      volume={volumesRef.current.get(peer.id) ?? 100}
                       peerId={peer.id}
                       toggleUserVolume={toggleUserVolume}
                     >
