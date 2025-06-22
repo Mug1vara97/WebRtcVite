@@ -17,13 +17,13 @@ class Room {
             // Broadcast new peer's state to all peers in the room
             this.io.to(this.id).emit('peerMuteStateChanged', {
                 peerId: peer.id,
-                isMuted: peer.isMuted()
+                isMuted: Boolean(peer.isMuted())
             });
 
             // Also broadcast audio state
             this.io.to(this.id).emit('peerAudioStateChanged', {
                 peerId: peer.id,
-                isEnabled: peer.isAudioEnabled()
+                isEnabled: Boolean(peer.isAudioEnabled())
             });
 
             console.log(`Peer ${peer.id} added to room ${this.id}`);

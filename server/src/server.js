@@ -177,7 +177,7 @@ io.on('connection', async (socket) => {
                     id: p.id,
                     name: p.name,
                     isMuted: p.isMuted(),
-                    isAudioEnabled: p.isAudioEnabled()
+                    isAudioEnabled: Boolean(p.isAudioEnabled())
                 }));
 
             // Get existing producers
@@ -197,7 +197,7 @@ io.on('connection', async (socket) => {
                 peerId: peer.id,
                 name: peer.name,
                 isMuted: peer.isMuted(),
-                isAudioEnabled: peer.isAudioEnabled()
+                isAudioEnabled: Boolean(peer.isAudioEnabled())
             });
 
             console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
