@@ -812,13 +812,22 @@ const VideoOverlay = React.memo(({
   isSpeaking,
   isAudioEnabled,
   isLocal,
+  onVolumeClick,
+  volume,
   children
 }) => {
-  const [isVolumeOff, setIsVolumeOff] = useState(false);
+  const [isVolumeOff, setIsVolumeOff] = useState(volume === 0);
+
+  useEffect(() => {
+    setIsVolumeOff(volume === 0);
+  }, [volume]);
 
   const handleVolumeIconClick = (e) => {
     e.stopPropagation();
     setIsVolumeOff(prev => !prev);
+    if (onVolumeClick) {
+      onVolumeClick();
+    }
   };
 
   return (
@@ -1776,6 +1785,12 @@ function App() {
         newVolumes.set(peerId, newVolume);
         return newVolumes;
       });
+
+      // Также обновляем состояние аудио элемента
+      const audio = audioRef.current.get(peerId);
+      if (audio) {
+        audio.muted = newVolume === 0;
+      }
     }
   };
 
