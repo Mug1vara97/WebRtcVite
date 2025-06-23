@@ -857,7 +857,6 @@ const VideoOverlay = React.memo(({
         {peerName}
       </Box>
       
-      {/* Кнопка управления громкостью (только для удаленных пользователей) */}
       {!isLocal && (
         <IconButton
           onClick={onVolumeClick}
@@ -1758,13 +1757,16 @@ function App() {
     };
   }, [socketRef.current]);
 
-  const handleVolumeChange = (peerId, newValue) => {
+  const handleVolumeChange = (peerId) => {
     const gainNode = gainNodesRef.current.get(peerId);
+    const currentVolume = volumes.get(peerId) || 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
+    
     if (gainNode) {
-      gainNode.gain.value = newValue === 0 ? 0 : 1;
+      gainNode.gain.value = newVolume === 0 ? 0 : 1;
       setVolumes(prev => {
         const newVolumes = new Map(prev);
-        newVolumes.set(peerId, newValue);
+        newVolumes.set(peerId, newVolume);
         return newVolumes;
       });
     }
@@ -2975,7 +2977,7 @@ function App() {
                     isSpeaking={speakingStates.get(peer.id)}
                     isAudioEnabled={audioStates.get(peer.id)}
                     isLocal={false}
-                    onVolumeClick={() => handleVolumeChange(peer.id, volumes.get(peer.id) || 100)}
+                    onVolumeClick={() => handleVolumeChange(peer.id)}
                     volume={volumes.get(peer.id) || 100}
                   />
                 ) : (
@@ -2997,7 +2999,7 @@ function App() {
                       isSpeaking={speakingStates.get(peer.id)}
                       isAudioEnabled={audioStates.get(peer.id)}
                       isLocal={false}
-                      onVolumeClick={() => handleVolumeChange(peer.id, volumes.get(peer.id) || 100)}
+                      onVolumeClick={() => handleVolumeChange(peer.id)}
                       volume={volumes.get(peer.id) || 100}
                     />
                   </div>
