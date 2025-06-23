@@ -513,10 +513,19 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center'
   },
+  fullscreenVideoContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   fullscreenVideo: {
     width: '100%',
     height: '100%',
-    objectFit: 'contain'
+    objectFit: 'contain',
+    backgroundColor: '#000'
   },
   fullscreenControls: {
     position: 'absolute',
@@ -669,7 +678,7 @@ const MuteIndicator = React.memo(({ peerId }) => {
 });
 
 // Оптимизированный компонент для видео (не перерисовывается при изменении состояния)
-const VideoPlayer = React.memo(({ stream }) => {
+const VideoPlayer = React.memo(({ stream, style }) => {
   const videoRef = useRef();
   const [isHidden, setIsHidden] = useState(false);
   const [isRemoved, setIsRemoved] = useState(false);
@@ -714,43 +723,14 @@ const VideoPlayer = React.memo(({ stream }) => {
           videoRef.current.load();
         }
 
-        // Устанавливаем минимальные задержки для буферизации
         videoRef.current.playsInline = true;
         videoRef.current.autoplay = true;
-        videoRef.current.latencyHint = 'interactive';
-        
-        // Отключаем ненужные операции с видео
-        videoRef.current.disableRemotePlayback = true;
-        videoRef.current.preservesPitch = false;
-
-        // Устанавливаем поток
         videoRef.current.srcObject = stream;
 
-        // Настраиваем обработку треков для синхронизации
-        stream.getTracks().forEach(track => {
-          if (track.kind === 'audio') {
-            track.enabled = true;
-            // Устанавливаем приоритет для аудио
-            track.contentHint = 'speech';
-          } else if (track.kind === 'video') {
-            track.enabled = true;
-            // Оптимизируем настройки видео
-            track.contentHint = 'motion';
-          }
-          
-          track.onended = () => {
-            console.log('Track ended:', track.id);
-            cleanupVideo();
-          };
-        });
-
-        // Запускаем воспроизведение с минимальной задержкой
         const playPromise = videoRef.current.play();
         if (playPromise !== undefined) {
           try {
             await playPromise;
-            // Устанавливаем минимальную задержку после успешного запуска
-            videoRef.current.playbackRate = 1.0;
             console.log('Video playback started successfully');
           } catch (error) {
             if (error.name === 'AbortError') {
@@ -770,7 +750,6 @@ const VideoPlayer = React.memo(({ stream }) => {
       }
     };
 
-    // Уменьшаем задержку инициализации
     setupVideo();
 
     return () => {
@@ -804,12 +783,11 @@ const VideoPlayer = React.memo(({ stream }) => {
           clearTimeout(cleanupTimeoutRef.current);
         }
         
-        // Уменьшаем задержку очистки
         cleanupTimeoutRef.current = setTimeout(() => {
           if (mountedRef.current) {
             setIsRemoved(true);
           }
-        }, 100); // Уменьшили с 300мс до 100мс
+        }, 100);
 
         setupAttemptRef.current = false;
       } catch (error) {
@@ -834,7 +812,7 @@ const VideoPlayer = React.memo(({ stream }) => {
       borderRadius: '8px',
       overflow: 'hidden',
       opacity: isHidden ? 0 : 1,
-      transition: 'opacity 0.2s ease-out' // Уменьшили время анимации
+      transition: 'opacity 0.2s ease-out'
     }}>
       <video
         ref={videoRef}
@@ -846,7 +824,8 @@ const VideoPlayer = React.memo(({ stream }) => {
           position: 'absolute',
           top: 0,
           left: 0,
-          zIndex: 1
+          zIndex: 1,
+          ...(style || {})
         }}
         autoPlay
         playsInline
@@ -868,7 +847,7 @@ const VideoPlayer = React.memo(({ stream }) => {
       )}
     </div>
   );
-}, (prevProps, nextProps) => prevProps.stream === nextProps.stream);
+}, (prevProps, nextProps) => prevProps.stream === nextProps.stream && prevProps.style === nextProps.style);
 
 // Компонент оверлея (перерисовывается отдельно от видео)
 const VideoOverlay = React.memo(({ 
@@ -2737,30 +2716,30 @@ function App() {
 
       return (
         <Box sx={styles.fullscreenOverlay}>
-          <video
-            autoPlay
-            playsInline
-            style={styles.fullscreenVideo}
-            srcObject={screenData.stream}
-          />
-          <Box sx={styles.fullscreenControls}>
-            <IconButton
-              onClick={() => handleFullscreenToggle(fullscreenShare)}
-              sx={{
-                color: '#ffffff',
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                '&:hover': {
-                  backgroundColor: 'rgba(0, 0, 0, 0.7)'
-                }
-              }}
-            >
-              <FullscreenExit />
-            </IconButton>
+          <Box sx={styles.fullscreenVideoContainer}>
+            <VideoPlayer 
+              stream={screenData.stream}
+              style={styles.fullscreenVideo}
+            />
+            <Box sx={styles.fullscreenControls}>
+              <IconButton
+                onClick={() => handleFullscreenToggle(fullscreenShare)}
+                sx={{
+                  color: '#ffffff',
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)'
+                  }
+                }}
+              >
+                <FullscreenExit />
+              </IconButton>
+            </Box>
+            <Typography sx={styles.fullscreenUserName}>
+              <ScreenShare sx={{ fontSize: 18 }} />
+              {screenData.name}
+            </Typography>
           </Box>
-          <Typography sx={styles.fullscreenUserName}>
-            <ScreenShare sx={{ fontSize: 18 }} />
-            {screenData.name}
-          </Typography>
         </Box>
       );
     }
