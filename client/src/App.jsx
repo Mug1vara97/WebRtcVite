@@ -3191,15 +3191,66 @@ function App() {
           </Toolbar>
         </AppBar>
         <Container sx={styles.container}>
-          {/* Определяем количество участников */}
+          {/* Определяем количество участников + демонстрации экрана */}
           {fullscreenShare === null && (
             <Box sx={{
               ...styles.videoGrid,
-              ...(peers.size === 0 ? styles.gridLayoutOne :
-                peers.size === 1 ? styles.gridLayoutTwo :
-                peers.size === 3 ? styles.gridLayoutFour :
-                styles.gridLayoutMore)
+              ...((() => {
+                // Подсчитываем общее количество блоков
+                const screenShareCount = (isScreenSharing ? 1 : 0) + remoteScreens.size;
+                const totalBlocks = peers.size + 1 + screenShareCount; // +1 для локального пользователя
+
+                if (totalBlocks === 1) return styles.gridLayoutOne;
+                if (totalBlocks === 2) return styles.gridLayoutTwo;
+                if (totalBlocks <= 4) return styles.gridLayoutFour;
+                return styles.gridLayoutMore;
+              })())
             }}>
+              {/* Screen sharing blocks first */}
+              {isScreenSharing && screenStream && (
+                <Box sx={styles.videoItem}>
+                  <Box sx={styles.screenShareItem}>
+                    <VideoPlayer stream={screenStream} />
+                    <Box sx={styles.screenShareControls}>
+                      <IconButton
+                        onClick={() => handleFullscreenToggle(socketRef.current?.id)}
+                        sx={styles.fullscreenButton}
+                      >
+                        <Fullscreen />
+                      </IconButton>
+                    </Box>
+                    <Box sx={styles.screenShareUserName}>
+                      <ScreenShare sx={{ fontSize: 16 }} />
+                      {userName} (Screen)
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+              {Array.from(remoteScreens.entries()).map(([peerId, screenData]) => {
+                const peer = peers.get(peerId);
+                if (!peer) return null;
+
+                return (
+                  <Box key={`screen-${peerId}`} sx={styles.videoItem}>
+                    <Box sx={styles.screenShareItem}>
+                      <VideoPlayer stream={screenData?.stream || null} />
+                      <Box sx={styles.screenShareControls}>
+                        <IconButton
+                          onClick={() => handleFullscreenToggle(peerId)}
+                          sx={styles.fullscreenButton}
+                        >
+                          <Fullscreen />
+                        </IconButton>
+                      </Box>
+                      <Box sx={styles.screenShareUserName}>
+                        <ScreenShare sx={{ fontSize: 16 }} />
+                        {peer.name} (Screen)
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })}
+
               {/* Local user */}
               <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
                 {isVideoEnabled && videoStream ? (
@@ -3282,8 +3333,8 @@ function App() {
             </Box>
           )}
 
-          {/* Screen sharing */}
-          {renderScreenShares}
+          {/* Fullscreen share */}
+          {fullscreenShare !== null && renderScreenShares}
         </Container>
         <Box sx={styles.bottomBar}>
           <Box sx={styles.controlsContainer}>
