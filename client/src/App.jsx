@@ -1776,10 +1776,11 @@ function App() {
   const handleVolumeChange = (peerId) => {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
-    const currentVolume = volumes.get(peerId) || 100;
-    const newVolume = currentVolume === 0 ? 100 : 0;
+    const currentVolume = volumes.get(peerId) ?? 100;
+    const isMuted = currentVolume === 0;
+    const newVolume = isMuted ? 100 : 0;
     
-    console.log('Current volume:', currentVolume, 'New volume:', newVolume);
+    console.log('Current volume:', currentVolume, 'New volume:', newVolume, 'Is currently muted:', isMuted);
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
@@ -1788,7 +1789,7 @@ function App() {
       console.log('Audio element exists:', !!audio);
       
       if (audio) {
-        if (newVolume > 0) {
+        if (isMuted) { // Если сейчас замучено - размучиваем
           // При включении звука сначала подключаем узлы
           const analyser = analyserNodesRef.current.get(peerId);
           console.log('Analyser exists:', !!analyser);
@@ -1819,7 +1820,7 @@ function App() {
               console.error('Error reconnecting audio nodes:', error);
             }
           }
-        } else {
+        } else { // Если сейчас не замучено - мучиваем
           // При выключении звука просто устанавливаем gain в 0 и мутим
           gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
           audio.muted = true;
