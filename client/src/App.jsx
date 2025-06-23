@@ -171,12 +171,39 @@ const styles = {
   },
   videoGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '8px',
-    padding: '16px',
     width: '100%',
-    maxWidth: '1200px',
-    margin: '0 auto'
+    maxWidth: '1600px',
+    margin: '0 auto',
+    height: 'calc(100vh - 140px)', // Учитываем высоту верхней и нижней панели
+    padding: '16px'
+  },
+  // Добавляем новые стили для разных раскладок
+  gridLayoutOne: {
+    gridTemplateColumns: '1fr',
+    '& > div': {
+      aspectRatio: '16/9',
+      maxHeight: 'calc(100vh - 172px)' // 140px + 2 * 16px padding
+    }
+  },
+  gridLayoutTwo: {
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    '& > div': {
+      aspectRatio: '16/9'
+    }
+  },
+  gridLayoutFour: {
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gridTemplateRows: 'repeat(2, 1fr)',
+    '& > div': {
+      aspectRatio: '1/1'
+    }
+  },
+  gridLayoutMore: {
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    '& > div': {
+      aspectRatio: '16/9'
+    }
   },
   videoItem: {
     backgroundColor: '#2B2D31',
@@ -3164,21 +3191,66 @@ function App() {
           </Toolbar>
         </AppBar>
         <Container sx={styles.container}>
-          <Box sx={styles.videoGrid}>
-            {/* Only render video grid when not in fullscreen mode */}
-            {fullscreenShare === null && (
-              <>
-                {/* Local user */}
-                <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
-                  {isVideoEnabled && videoStream ? (
-                    <VideoView 
-                      stream={videoStream} 
+          {/* Определяем количество участников */}
+          {fullscreenShare === null && (
+            <Box sx={{
+              ...styles.videoGrid,
+              ...(peers.size === 0 ? styles.gridLayoutOne :
+                peers.size === 1 ? styles.gridLayoutTwo :
+                peers.size === 3 ? styles.gridLayoutFour :
+                styles.gridLayoutMore)
+            }}>
+              {/* Local user */}
+              <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
+                {isVideoEnabled && videoStream ? (
+                  <VideoView 
+                    stream={videoStream} 
+                    peerName={userName}
+                    isMuted={isMuted}
+                    isSpeaking={speakingStates.get(socketRef.current?.id)}
+                    isAudioEnabled={isAudioEnabled}
+                    isLocal={true}
+                    isAudioMuted={isMuted}
+                  />
+                ) : (
+                  <div style={{ 
+                    position: 'relative', 
+                    width: '100%', 
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    alignItems: 'center'
+                  }}>
+                    <Box sx={styles.userAvatar}>
+                      {userName[0].toUpperCase()}
+                    </Box>
+                    <VideoOverlay
                       peerName={userName}
                       isMuted={isMuted}
                       isSpeaking={speakingStates.get(socketRef.current?.id)}
                       isAudioEnabled={isAudioEnabled}
                       isLocal={true}
                       isAudioMuted={isMuted}
+                    />
+                  </div>
+                )}
+              </Box>
+
+              {/* Remote users */}
+              {Array.from(peers.values()).map((peer) => (
+                <Box key={peer.id} sx={styles.videoItem} className={speakingStates.get(peer.id) ? 'speaking' : ''}>
+                  {remoteVideos.get(peer.id)?.stream ? (
+                    <VideoView
+                      stream={remoteVideos.get(peer.id).stream}
+                      peerName={peer.name}
+                      isMuted={peer.isMuted}
+                      isSpeaking={speakingStates.get(peer.id)}
+                      isAudioEnabled={audioStates.get(peer.id)}
+                      isLocal={false}
+                      onVolumeClick={() => handleVolumeChange(peer.id)}
+                      volume={volumes.get(peer.id) || 100}
+                      isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                     />
                   ) : (
                     <div style={{ 
@@ -3191,26 +3263,9 @@ function App() {
                       alignItems: 'center'
                     }}>
                       <Box sx={styles.userAvatar}>
-                        {userName[0].toUpperCase()}
+                        {peer.name[0].toUpperCase()}
                       </Box>
                       <VideoOverlay
-                        peerName={userName}
-                        isMuted={isMuted}
-                        isSpeaking={speakingStates.get(socketRef.current?.id)}
-                        isAudioEnabled={isAudioEnabled}
-                        isLocal={true}
-                        isAudioMuted={isMuted}
-                      />
-                    </div>
-                  )}
-                </Box>
-
-                {/* Remote users */}
-                {Array.from(peers.values()).map((peer) => (
-                  <Box key={peer.id} sx={styles.videoItem} className={speakingStates.get(peer.id) ? 'speaking' : ''}>
-                    {remoteVideos.get(peer.id)?.stream ? (
-                      <VideoView
-                        stream={remoteVideos.get(peer.id).stream}
                         peerName={peer.name}
                         isMuted={peer.isMuted}
                         isSpeaking={speakingStates.get(peer.id)}
@@ -3220,39 +3275,15 @@ function App() {
                         volume={volumes.get(peer.id) || 100}
                         isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                       />
-                    ) : (
-                      <div style={{ 
-                        position: 'relative', 
-                        width: '100%', 
-                        height: '100%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        alignItems: 'center'
-                      }}>
-                        <Box sx={styles.userAvatar}>
-                          {peer.name[0].toUpperCase()}
-                        </Box>
-                        <VideoOverlay
-                          peerName={peer.name}
-                          isMuted={peer.isMuted}
-                          isSpeaking={speakingStates.get(peer.id)}
-                          isAudioEnabled={audioStates.get(peer.id)}
-                          isLocal={false}
-                          onVolumeClick={() => handleVolumeChange(peer.id)}
-                          volume={volumes.get(peer.id) || 100}
-                          isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
-                        />
-                      </div>
-                    )}
-                  </Box>
-                ))}
-              </>
-            )}
+                    </div>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          )}
 
-            {/* Screen sharing */}
-            {renderScreenShares}
-          </Box>
+          {/* Screen sharing */}
+          {renderScreenShares}
         </Container>
         <Box sx={styles.bottomBar}>
           <Box sx={styles.controlsContainer}>
