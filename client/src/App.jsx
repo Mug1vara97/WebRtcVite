@@ -538,6 +538,30 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px'
+  },
+  fullscreenButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    color: '#ffffff',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 10,
+    '&:hover': {
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      transform: 'scale(1.1)'
+    },
+    transition: 'all 0.2s ease'
+  },
+  screenShareControls: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    padding: '8px',
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 100%)',
+    display: 'flex',
+    justifyContent: 'flex-end',
+    zIndex: 5
   }
 };
 
@@ -2755,25 +2779,18 @@ function App() {
           <Box sx={styles.videoItem}>
             <Box sx={styles.screenShareItem}>
               <VideoPlayer stream={screenStream} />
+              <Box sx={styles.screenShareControls}>
+                <IconButton
+                  onClick={() => handleFullscreenToggle(socketRef.current?.id)}
+                  sx={styles.fullscreenButton}
+                >
+                  <Fullscreen />
+                </IconButton>
+              </Box>
               <Box sx={styles.screenShareUserName}>
                 <ScreenShare sx={{ fontSize: 16 }} />
                 {userName}
               </Box>
-              <IconButton
-                onClick={() => handleFullscreenToggle(socketRef.current?.id)}
-                sx={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  color: '#ffffff',
-                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)'
-                  }
-                }}
-              >
-                <Fullscreen />
-              </IconButton>
             </Box>
           </Box>
         )}
@@ -2785,25 +2802,18 @@ function App() {
             <Box key={peerId} sx={styles.videoItem}>
               <Box sx={styles.screenShareItem}>
                 <VideoPlayer stream={screenData?.stream || null} />
+                <Box sx={styles.screenShareControls}>
+                  <IconButton
+                    onClick={() => handleFullscreenToggle(peerId)}
+                    sx={styles.fullscreenButton}
+                  >
+                    <Fullscreen />
+                  </IconButton>
+                </Box>
                 <Box sx={styles.screenShareUserName}>
                   <ScreenShare sx={{ fontSize: 16 }} />
                   {peer.name}
                 </Box>
-                <IconButton
-                  onClick={() => handleFullscreenToggle(peerId)}
-                  sx={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    color: '#ffffff',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    '&:hover': {
-                      backgroundColor: 'rgba(0, 0, 0, 0.7)'
-                    }
-                  }}
-                >
-                  <Fullscreen />
-                </IconButton>
               </Box>
             </Box>
           );
