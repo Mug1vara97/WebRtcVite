@@ -1784,59 +1784,18 @@ function App() {
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
-      // Обновляем состояние аудио элемента сначала
+      // Обновляем состояние аудио элемента
       const audio = audioRef.current.get(peerId);
       console.log('Audio element exists:', !!audio);
       
       if (audio) {
         if (isMuted) { // Если сейчас замучено - размучиваем
-          // При включении звука сначала подключаем узлы
-          const analyser = analyserNodesRef.current.get(peerId);
-          console.log('Analyser exists:', !!analyser);
-          
-          if (analyser && audio.srcObject) {
-            try {
-              // Отключаем старые соединения
-              gainNode.disconnect();
-              analyser.disconnect();
-              
-              // Создаем новое подключение с сохранением настроек анализатора
-              const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
-              
-              // Создаем новый анализатор с теми же настройками
-              const newAnalyser = createAudioAnalyser(audioContextRef.current);
-              newAnalyser.fftSize = analyser.fftSize;
-              newAnalyser.smoothingTimeConstant = analyser.smoothingTimeConstant;
-              newAnalyser.minDecibels = analyser.minDecibels;
-              newAnalyser.maxDecibels = analyser.maxDecibels;
-              
-              // Подключаем узлы
-              source.connect(newAnalyser);
-              newAnalyser.connect(gainNode);
-              gainNode.connect(audioContextRef.current.destination);
-              
-              // Обновляем ссылку на анализатор
-              analyserNodesRef.current.set(peerId, newAnalyser);
-              
-              // Теперь устанавливаем значение gain
-              gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
-              console.log('Reconnected audio nodes with preserved settings and set gain to 1');
-              
-              // Перезапускаем определение голоса с новым анализатором
-              detectSpeaking(newAnalyser, peerId);
-              
-              // И только потом размучиваем аудио
-              audio.muted = false;
-              audio.play().catch(error => {
-                console.error('Error playing audio:', error);
-              });
-              console.log('Unmuted audio and attempted to play');
-            } catch (error) {
-              console.error('Error reconnecting audio nodes:', error);
-            }
-          }
+          // Просто устанавливаем значение gain в 1
+          gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
+          audio.muted = false;
+          console.log('Set gain to 1 and unmuted audio');
         } else { // Если сейчас не замучено - мучиваем
-          // При выключении звука просто устанавливаем gain в 0 и мутим
+          // Просто устанавливаем значение gain в 0
           gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
           audio.muted = true;
           console.log('Set gain to 0 and muted audio');
