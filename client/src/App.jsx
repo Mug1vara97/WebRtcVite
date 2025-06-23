@@ -805,34 +805,37 @@ const VideoPlayer = React.memo(({ stream }) => {
   );
 }, (prevProps, nextProps) => prevProps.stream === nextProps.stream);
 
-// Выносим компонент управления звуком в отдельный компонент
+// Выносим компонент управления звуком в отдельный мемоизированный компонент
 const VolumeControl = React.memo(({ 
   isSpeaking,
   onVolumeClick,
-  volume
+  volume,
+  className
 }) => {
-  // Используем состояние для мгновенного обновления иконки
+  // Используем useRef для хранения последнего известного состояния
+  const volumeRef = useRef(volume);
   const [isVolumeOff, setIsVolumeOff] = useState(volume === 0);
 
-  // Синхронизируем с внешним состоянием при его изменении
+  // Обновляем ref и состояние только когда volume действительно изменился
   useEffect(() => {
-    setIsVolumeOff(volume === 0);
+    if (volumeRef.current !== volume) {
+      volumeRef.current = volume;
+      setIsVolumeOff(volume === 0);
+    }
   }, [volume]);
 
-  const handleClick = (e) => {
+  const handleClick = useCallback((e) => {
     e.stopPropagation();
-    // Обновляем локальное состояние немедленно
-    const newState = !isVolumeOff;
-    setIsVolumeOff(newState);
     if (onVolumeClick) {
       onVolumeClick();
+      setIsVolumeOff(!isVolumeOff);
     }
-  };
+  }, [onVolumeClick, isVolumeOff]);
 
   return (
     <IconButton
       onClick={handleClick}
-      className={`volumeControl ${
+      className={`${className} ${
         isVolumeOff
           ? 'muted'
           : isSpeaking
@@ -877,13 +880,14 @@ const VolumeControl = React.memo(({
       }}
     >
       {isVolumeOff ? (
-        <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
+        <VolumeOff sx={{ fontSize: 20 }} />
       ) : (
         <VolumeUp sx={{ fontSize: 20 }} />
       )}
     </IconButton>
   );
 }, (prevProps, nextProps) => {
+  // Проверяем только необходимые пропсы
   return (
     prevProps.isSpeaking === nextProps.isSpeaking &&
     prevProps.volume === nextProps.volume
@@ -945,6 +949,7 @@ const VideoOverlay = React.memo(({
           isSpeaking={isSpeaking}
           onVolumeClick={onVolumeClick}
           volume={volume}
+          className="volumeControl"
         />
       )}
       
@@ -952,6 +957,7 @@ const VideoOverlay = React.memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
+  // Оптимизируем ре-рендеринг
   return (
     prevProps.peerName === nextProps.peerName &&
     prevProps.isMuted === nextProps.isMuted &&
@@ -1827,13 +1833,9 @@ function App() {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     
-    // Получаем текущее состояние громкости
+    // Получаем текущее состояние громкости из volumes Map
     const currentVolume = volumes.get(peerId) || 100;
     const newVolume = currentVolume === 0 ? 100 : 0;
-    
-    // Обновляем индивидуальное состояние мьюта
-    const newIsIndividuallyMuted = newVolume === 0;
-    individualMutedPeersRef.current.set(peerId, newIsIndividuallyMuted);
     
     console.log('Peer:', peerId, 'Current volume:', currentVolume, 'New volume:', newVolume);
     console.log('GainNode exists:', !!gainNode);
@@ -1844,7 +1846,7 @@ function App() {
       console.log('Audio element exists:', !!audio);
       
       if (audio) {
-        if (!newIsIndividuallyMuted) {
+        if (newVolume > 0) {
           // Размучиваем только если глобальный звук включен
           if (isAudioEnabled) {
             audio.muted = false;
@@ -1857,6 +1859,9 @@ function App() {
           console.log('Set gain to 0 and muted audio for peer:', peerId);
         }
       }
+
+      // Обновляем индивидуальное состояние мьюта
+      individualMutedPeersRef.current.set(peerId, newVolume === 0);
       
       // Обновляем UI состояние
       setVolumes(prev => {
