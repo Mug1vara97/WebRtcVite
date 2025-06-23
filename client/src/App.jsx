@@ -2379,6 +2379,10 @@ function App() {
 
   const startVideo = async () => {
     try {
+      if (!producerTransportRef.current) {
+        throw new Error('Transport not ready');
+      }
+
       console.log('Starting video...');
       
       // Сохраняем текущие состояния звука
@@ -2427,11 +2431,6 @@ function App() {
         }
       });
 
-      // Остальной код без изменений...
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-
       const audioTrack = stream.getAudioTracks()[0];
       const videoTrack = stream.getVideoTracks()[0];
 
@@ -2452,6 +2451,9 @@ function App() {
       if (producerTransportRef.current && videoTrack) {
         const videoProducer = await producerTransportRef.current.produce({
           track: videoTrack,
+          encodings: [
+            { maxBitrate: 1500000, scaleResolutionDownBy: 1, maxFramerate: 30 }
+          ],
           codecOptions: {
             videoGoogleStartBitrate: 1000
           },
@@ -2460,6 +2462,17 @@ function App() {
         
         producersRef.current.set('video', videoProducer);
         console.log('Video producer created:', videoProducer.id);
+
+        // Обработчики событий для видео producer
+        videoProducer.on('transportclose', () => {
+          console.log('Video transport closed');
+          stopVideo();
+        });
+
+        videoProducer.on('trackended', () => {
+          console.log('Video track ended');
+          stopVideo();
+        });
       }
 
       setIsVideoEnabled(true);
