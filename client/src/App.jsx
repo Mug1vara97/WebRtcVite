@@ -805,7 +805,77 @@ const VideoPlayer = React.memo(({ stream }) => {
   );
 }, (prevProps, nextProps) => prevProps.stream === nextProps.stream);
 
-// Компонент оверлея (перерисовывается отдельно от видео)
+// Выносим компонент управления звуком в отдельный компонент
+const VolumeControl = React.memo(({ 
+  isSpeaking,
+  onVolumeClick,
+  volume
+}) => {
+  const isVolumeOff = volume === 0;
+
+  return (
+    <IconButton
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onVolumeClick) {
+          onVolumeClick();
+        }
+      }}
+      className={`volumeControl ${
+        isVolumeOff
+          ? 'muted'
+          : isSpeaking
+          ? 'speaking'
+          : 'silent'
+      }`}
+      sx={{
+        position: 'absolute',
+        bottom: 8,
+        right: 8,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: '50%',
+        transition: 'all 0.2s ease',
+        zIndex: 10,
+        '&:hover': {
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          transform: 'scale(1.1)'
+        },
+        '&.muted': {
+          backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
+          animation: 'mutePulse 2s infinite !important',
+          '&:hover': {
+            backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
+            transform: 'scale(1.1)'
+          }
+        },
+        '&.speaking': {
+          backgroundColor: 'transparent',
+          '& .MuiSvgIcon-root': {
+            color: '#3ba55c'
+          }
+        },
+        '&.silent': {
+          backgroundColor: 'transparent',
+          '& .MuiSvgIcon-root': {
+            color: '#B5BAC1'
+          }
+        }
+      }}
+    >
+      {isVolumeOff ? (
+        <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
+      ) : (
+        <VolumeUp sx={{ fontSize: 20 }} />
+      )}
+    </IconButton>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.isSpeaking === nextProps.isSpeaking &&
+    prevProps.volume === nextProps.volume
+  );
+});
+
 const VideoOverlay = React.memo(({ 
   peerName, 
   isMuted, 
@@ -816,23 +886,6 @@ const VideoOverlay = React.memo(({
   volume,
   children
 }) => {
-  // Используем локальное состояние для анимации UI
-  const [isVolumeOff, setIsVolumeOff] = useState(volume === 0);
-
-  // Синхронизируем с внешним состоянием
-  useEffect(() => {
-    setIsVolumeOff(volume === 0);
-  }, [volume]);
-
-  const handleVolumeIconClick = (e) => {
-    e.stopPropagation();
-    if (onVolumeClick) {
-      onVolumeClick();
-    }
-  };
-
-  const volumeIconClass = isVolumeOff ? 'muted' : (isSpeaking ? 'speaking' : 'silent');
-
   return (
     <div style={{
       position: 'absolute',
@@ -845,8 +898,7 @@ const VideoOverlay = React.memo(({
       flexDirection: 'column',
       justifyContent: 'flex-end',
       padding: '12px',
-      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)',
-      pointerEvents: 'none'
+      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
     }}>
       <Box sx={{
         display: 'flex',
@@ -859,8 +911,7 @@ const VideoOverlay = React.memo(({
         borderRadius: '4px',
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         width: 'fit-content',
-        mb: 1,
-        pointerEvents: 'auto'
+        mb: 1
       }}>
         {isMuted ? (
           <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
@@ -876,52 +927,11 @@ const VideoOverlay = React.memo(({
       </Box>
       
       {!isLocal && (
-        <IconButton
-          onClick={handleVolumeIconClick}
-          className={`volumeControl ${volumeIconClass}`}
-          sx={{
-            position: 'absolute',
-            bottom: 8,
-            right: 8,
-            backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.1)' : 'rgba(0,0,0,0.5)',
-            borderRadius: '50%',
-            transition: 'all 0.2s ease',
-            zIndex: 10,
-            pointerEvents: 'auto',
-            '&:hover': {
-              backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.2)' : 'rgba(0,0,0,0.7)',
-              transform: 'scale(1.1)'
-            },
-            '&.muted': {
-              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
-              animation: 'mutePulse 2s infinite !important',
-              '& .MuiSvgIcon-root': {
-                color: '#ed4245'
-              },
-              '&:hover': {
-                backgroundColor: 'rgba(237, 66, 69, 0.2) !important'
-              }
-            },
-            '&.speaking': {
-              backgroundColor: 'transparent',
-              '& .MuiSvgIcon-root': {
-                color: '#3ba55c'
-              }
-            },
-            '&.silent': {
-              backgroundColor: 'transparent',
-              '& .MuiSvgIcon-root': {
-                color: '#B5BAC1'
-              }
-            }
-          }}
-        >
-          {isVolumeOff ? (
-            <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
-          ) : (
-            <VolumeUp sx={{ fontSize: 20 }} />
-          )}
-        </IconButton>
+        <VolumeControl
+          isSpeaking={isSpeaking}
+          onVolumeClick={onVolumeClick}
+          volume={volume}
+        />
       )}
       
       {children}
@@ -1803,9 +1813,10 @@ function App() {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     
-    // Получаем текущее состояние индивидуального mute
+    // Даже если глобально звук выключен, мы все равно меняем индивидуальное состояние
     const isIndividuallyMuted = individualMutedPeersRef.current.get(peerId) ?? false;
     const newIsIndividuallyMuted = !isIndividuallyMuted;
+    const newVolume = newIsIndividuallyMuted ? 0 : 100;
     
     console.log('Peer:', peerId, 'Current individual mute:', isIndividuallyMuted, 'New individual mute:', newIsIndividuallyMuted);
     console.log('GainNode exists:', !!gainNode);
@@ -1836,63 +1847,30 @@ function App() {
       // Обновляем UI состояние
       setVolumes(prev => {
         const newVolumes = new Map(prev);
-        newVolumes.set(peerId, newIsIndividuallyMuted ? 0 : 100);
+        newVolumes.set(peerId, newVolume);
         return newVolumes;
       });
     }
   };
 
   // Обновляем обработчик подключения пира
-  const handlePeerJoined = useCallback(({ peerId, isMuted }) => {
-    console.log('Peer joined:', peerId, 'isMuted:', isMuted);
-    
+  const handlePeerJoined = useCallback(({ peerId }) => {
     // Инициализируем состояние - не замучен индивидуально
     individualMutedPeersRef.current.set(peerId, false);
-    
-    // Инициализируем состояние звука
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.set(peerId, 100);
       return newVolumes;
     });
-
-    // Обновляем остальные состояния
-    setAudioStates(prev => new Map(prev).set(peerId, true));
-    setPeers(prev => {
-      const newPeers = new Map(prev);
-      newPeers.set(peerId, { id: peerId, isMuted });
-      return newPeers;
-    });
   }, []);
 
+  // Обновляем обработчик отключения пира
   const handlePeerLeft = useCallback(({ peerId }) => {
-    console.log('Peer left:', peerId);
-    
-    // Очищаем состояние индивидуального mute
     individualMutedPeersRef.current.delete(peerId);
-    
-    // Очищаем состояние звука
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.delete(peerId);
       return newVolumes;
-    });
-
-    // Очищаем остальные состояния
-    setAudioStates(prev => {
-      const newStates = new Map(prev);
-      newStates.delete(peerId);
-      return newStates;
-    });
-    setPeers(prev => {
-      const newPeers = new Map(prev);
-      newPeers.delete(peerId);
-      return newPeers;
-    });
-    setSpeakingStates(prev => {
-      const newStates = new Map(prev);
-      newStates.delete(peerId);
-      return newStates;
     });
   }, []);
 
