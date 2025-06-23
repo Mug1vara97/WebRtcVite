@@ -514,25 +514,40 @@ const styles = {
     justifyContent: 'center'
   },
   fullscreenVideoContainer: {
-    width: '100%',
-    height: '100%',
+    width: '100vw',
+    height: '100vh',
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    backgroundColor: '#000'
   },
   fullscreenVideo: {
     width: '100%',
     height: '100%',
-    objectFit: 'contain',
+    objectFit: 'cover',
     backgroundColor: '#000'
   },
   fullscreenControls: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 0,
+    left: 0,
+    right: 0,
+    padding: '16px',
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
     display: 'flex',
-    gap: '8px'
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 10000
+  },
+  fullscreenButton: {
+    color: '#ffffff',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    '&:hover': {
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      transform: 'scale(1.1)'
+    },
+    transition: 'all 0.2s ease'
   },
   fullscreenUserName: {
     position: 'absolute',
@@ -546,20 +561,8 @@ const styles = {
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
-  },
-  fullscreenButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    color: '#ffffff',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 10,
-    '&:hover': {
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-      transform: 'scale(1.1)'
-    },
-    transition: 'all 0.2s ease'
+    gap: '8px',
+    zIndex: 10000
   },
   screenShareControls: {
     position: 'absolute',
@@ -2714,6 +2717,17 @@ function App() {
         return null;
       }
 
+      // Ensure 720p quality
+      const videoTrack = screenData.stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const constraints = {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { max: 30 }
+        };
+        videoTrack.applyConstraints(constraints).catch(console.error);
+      }
+
       return (
         <Box sx={styles.fullscreenOverlay}>
           <Box sx={styles.fullscreenVideoContainer}>
@@ -2722,23 +2736,19 @@ function App() {
               style={styles.fullscreenVideo}
             />
             <Box sx={styles.fullscreenControls}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ScreenShare sx={{ color: '#fff', fontSize: 24 }} />
+                <Typography sx={{ color: '#fff', fontWeight: 500 }}>
+                  {screenData.name}
+                </Typography>
+              </Box>
               <IconButton
                 onClick={() => handleFullscreenToggle(fullscreenShare)}
-                sx={{
-                  color: '#ffffff',
-                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)'
-                  }
-                }}
+                sx={styles.fullscreenButton}
               >
-                <FullscreenExit />
+                <FullscreenExit sx={{ fontSize: 28 }} />
               </IconButton>
             </Box>
-            <Typography sx={styles.fullscreenUserName}>
-              <ScreenShare sx={{ fontSize: 18 }} />
-              {screenData.name}
-            </Typography>
           </Box>
         </Box>
       );
