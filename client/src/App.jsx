@@ -811,16 +811,26 @@ const VolumeControl = React.memo(({
   onVolumeClick,
   volume
 }) => {
-  const isVolumeOff = volume === 0;
+  // Используем состояние для мгновенного обновления иконки
+  const [isVolumeOff, setIsVolumeOff] = useState(volume === 0);
+
+  // Синхронизируем с внешним состоянием
+  useEffect(() => {
+    setIsVolumeOff(volume === 0);
+  }, [volume]);
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    // Обновляем локальное состояние немедленно
+    setIsVolumeOff(!isVolumeOff);
+    if (onVolumeClick) {
+      onVolumeClick();
+    }
+  };
 
   return (
     <IconButton
-      onClick={(e) => {
-        e.stopPropagation();
-        if (onVolumeClick) {
-          onVolumeClick();
-        }
-      }}
+      onClick={handleClick}
       className={`volumeControl ${
         isVolumeOff
           ? 'muted'
@@ -832,17 +842,20 @@ const VolumeControl = React.memo(({
         position: 'absolute',
         bottom: 8,
         right: 8,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.1)' : 'rgba(0,0,0,0.5)',
         borderRadius: '50%',
         transition: 'all 0.2s ease',
         zIndex: 10,
         '&:hover': {
-          backgroundColor: 'rgba(0,0,0,0.7)',
+          backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.2)' : 'rgba(0,0,0,0.7)',
           transform: 'scale(1.1)'
         },
         '&.muted': {
           backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
           animation: 'mutePulse 2s infinite !important',
+          '& .MuiSvgIcon-root': {
+            color: '#ed4245'
+          },
           '&:hover': {
             backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
             transform: 'scale(1.1)'
