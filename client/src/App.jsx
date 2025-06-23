@@ -880,19 +880,19 @@ const VideoOverlay = React.memo(({
             position: 'absolute',
             bottom: 8,
             right: 8,
-            backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.1)' : 'rgba(0,0,0,0.5)',
+            backgroundColor: 'rgba(0,0,0,0.5)',
             borderRadius: '50%',
             transition: 'all 0.2s ease',
             zIndex: 10,
             '&:hover': {
-              backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.2)' : 'rgba(0,0,0,0.7)',
+              backgroundColor: 'rgba(0,0,0,0.7)',
               transform: 'scale(1.1)'
             },
             '&.muted': {
               backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
               animation: 'mutePulse 2s infinite !important',
               '& .MuiSvgIcon-root': {
-                color: '#ed4245'
+                color: '#ed4245 !important'
               },
               '&:hover': {
                 backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
