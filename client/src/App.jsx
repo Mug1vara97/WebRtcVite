@@ -893,20 +893,14 @@ const VideoOverlay = React.memo(({
               animation: 'mutePulse 2s infinite !important',
               '& .MuiSvgIcon-root': {
                 color: '#ed4245 !important'
-              },
-              '&:hover': {
-                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
-                transform: 'scale(1.1)'
               }
             },
             '&.speaking': {
-              backgroundColor: 'transparent',
               '& .MuiSvgIcon-root': {
                 color: '#3ba55c'
               }
             },
             '&.silent': {
-              backgroundColor: 'transparent',
               '& .MuiSvgIcon-root': {
                 color: '#B5BAC1'
               }
@@ -914,7 +908,7 @@ const VideoOverlay = React.memo(({
           }}
         >
           {isVolumeOff ? (
-            <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
+            <VolumeOff sx={{ fontSize: 20 }} />
           ) : (
             <VolumeUp sx={{ fontSize: 20 }} />
           )}
