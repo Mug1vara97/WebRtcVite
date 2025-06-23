@@ -1786,12 +1786,12 @@ function App() {
       return;
     }
     
-    // Получаем текущее состояние mute из ref
-    const isMuted = mutedPeersRef.current.get(peerId) ?? false;
-    const newIsMuted = !isMuted;
-    const newVolume = newIsMuted ? 0 : 100;
+    // Получаем текущее состояние mute из volumes
+    const currentVolume = volumes.get(peerId) ?? 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
+    const newIsMuted = newVolume === 0;
     
-    console.log('Peer:', peerId, 'Current mute state:', isMuted, 'New mute state:', newIsMuted);
+    console.log('Peer:', peerId, 'Current volume:', currentVolume, 'New volume:', newVolume);
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
@@ -1813,10 +1813,8 @@ function App() {
         }
       }
 
-      // Сохраняем новое состояние mute в ref
+      // Сохраняем новое состояние mute в ref и volumes
       mutedPeersRef.current.set(peerId, newIsMuted);
-
-      // Обновляем состояние громкости в UI
       setVolumes(prev => {
         const newVolumes = new Map(prev);
         newVolumes.set(peerId, newVolume);
@@ -1839,18 +1837,25 @@ function App() {
         }
       });
     } else {
-      // Если включили звук, восстанавливаем состояния тех пиров, которые не были замучены
+      // Если включили звук, восстанавливаем состояния в соответствии с volumes
       audioRef.current.forEach((audio, peerId) => {
         const gainNode = gainNodesRef.current.get(peerId);
-        const isMuted = mutedPeersRef.current.get(peerId) ?? false;
+        const peerVolume = volumes.get(peerId) ?? 100;
         
-        if (gainNode && audio && !isMuted) {
-          gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
-          audio.muted = false;
+        if (gainNode && audio) {
+          if (peerVolume > 0) {
+            gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
+            audio.muted = false;
+            mutedPeersRef.current.set(peerId, false);
+          } else {
+            gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+            audio.muted = true;
+            mutedPeersRef.current.set(peerId, true);
+          }
         }
       });
     }
-  }, [isAudioEnabled]);
+  }, [isAudioEnabled, volumes]);
 
   // Добавляем обработчик для инициализации состояния при подключении нового пира
   const handlePeerJoined = useCallback(({ peerId }) => {
