@@ -816,15 +816,16 @@ const VideoOverlay = React.memo(({
   volume,
   children
 }) => {
+  // Используем локальное состояние для анимации UI
   const [isVolumeOff, setIsVolumeOff] = useState(volume === 0);
 
+  // Синхронизируем с внешним состоянием
   useEffect(() => {
     setIsVolumeOff(volume === 0);
   }, [volume]);
 
   const handleVolumeIconClick = (e) => {
     e.stopPropagation();
-    setIsVolumeOff(prev => !prev);
     if (onVolumeClick) {
       onVolumeClick();
     }
@@ -842,9 +843,9 @@ const VideoOverlay = React.memo(({
       flexDirection: 'column',
       justifyContent: 'flex-end',
       padding: '12px',
-      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
+      background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)',
+      pointerEvents: 'none' // Делаем оверлей прозрачным для кликов
     }}>
-      {/* Основной блок с информацией */}
       <Box sx={{
         display: 'flex',
         alignItems: 'center',
@@ -856,7 +857,8 @@ const VideoOverlay = React.memo(({
         borderRadius: '4px',
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         width: 'fit-content',
-        mb: 1
+        mb: 1,
+        pointerEvents: 'auto' // Возвращаем обработку кликов для элементов
       }}>
         {isMuted ? (
           <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
@@ -889,6 +891,7 @@ const VideoOverlay = React.memo(({
             borderRadius: '50%',
             transition: 'all 0.2s ease',
             zIndex: 10,
+            pointerEvents: 'auto', // Возвращаем обработку кликов для кнопки
             '&:hover': {
               backgroundColor: 'rgba(0,0,0,0.7)',
               transform: 'scale(1.1)'
@@ -1802,10 +1805,9 @@ function App() {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     
-    // Даже если глобально звук выключен, мы все равно меняем индивидуальное состояние
+    // Получаем текущее состояние индивидуального mute
     const isIndividuallyMuted = individualMutedPeersRef.current.get(peerId) ?? false;
     const newIsIndividuallyMuted = !isIndividuallyMuted;
-    const newVolume = newIsIndividuallyMuted ? 0 : 100;
     
     console.log('Peer:', peerId, 'Current individual mute:', isIndividuallyMuted, 'New individual mute:', newIsIndividuallyMuted);
     console.log('GainNode exists:', !!gainNode);
@@ -1836,30 +1838,63 @@ function App() {
       // Обновляем UI состояние
       setVolumes(prev => {
         const newVolumes = new Map(prev);
-        newVolumes.set(peerId, newVolume);
+        newVolumes.set(peerId, newIsIndividuallyMuted ? 0 : 100);
         return newVolumes;
       });
     }
   };
 
   // Обновляем обработчик подключения пира
-  const handlePeerJoined = useCallback(({ peerId }) => {
+  const handlePeerJoined = useCallback(({ peerId, isMuted }) => {
+    console.log('Peer joined:', peerId, 'isMuted:', isMuted);
+    
     // Инициализируем состояние - не замучен индивидуально
     individualMutedPeersRef.current.set(peerId, false);
+    
+    // Инициализируем состояние звука
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.set(peerId, 100);
       return newVolumes;
     });
+
+    // Обновляем остальные состояния
+    setAudioStates(prev => new Map(prev).set(peerId, true));
+    setPeers(prev => {
+      const newPeers = new Map(prev);
+      newPeers.set(peerId, { id: peerId, isMuted });
+      return newPeers;
+    });
   }, []);
 
-  // Обновляем обработчик отключения пира
   const handlePeerLeft = useCallback(({ peerId }) => {
+    console.log('Peer left:', peerId);
+    
+    // Очищаем состояние индивидуального mute
     individualMutedPeersRef.current.delete(peerId);
+    
+    // Очищаем состояние звука
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.delete(peerId);
       return newVolumes;
+    });
+
+    // Очищаем остальные состояния
+    setAudioStates(prev => {
+      const newStates = new Map(prev);
+      newStates.delete(peerId);
+      return newStates;
+    });
+    setPeers(prev => {
+      const newPeers = new Map(prev);
+      newPeers.delete(peerId);
+      return newPeers;
+    });
+    setSpeakingStates(prev => {
+      const newStates = new Map(prev);
+      newStates.delete(peerId);
+      return newStates;
     });
   }, []);
 
