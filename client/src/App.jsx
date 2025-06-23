@@ -2311,7 +2311,7 @@ function App() {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           cursor: 'always',
-          frameRate: { ideal: 30, max: 30 },
+          frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920, max: 1920 },
           height: { ideal: 1080, max: 1080 },
           aspectRatio: 16/9,
@@ -2342,15 +2342,15 @@ function App() {
         track: videoTrack,
         encodings: [
           {
-            // Используем разрешение 720p для передачи
-            scaleResolutionDownBy: 1.5, // 1080p -> 720p
-            maxBitrate: 2500000, // 2.5 Mbps для 720p
-            maxFramerate: 30
+            // Используем полное разрешение 1080p
+            scaleResolutionDownBy: 1,
+            maxBitrate: 5000000, // 5 Mbps для Full HD
+            maxFramerate: 60
           }
         ],
         codecOptions: {
-          videoGoogleStartBitrate: 1000, // Начальный битрейт 1 Mbps
-          videoGoogleMaxBitrate: 2500 // Максимальный битрейт 2.5 Mbps
+          videoGoogleStartBitrate: 3000, // Начальный битрейт 3 Mbps
+          videoGoogleMaxBitrate: 5000 // Максимальный битрейт 5 Mbps
         },
         appData: {
           mediaType: 'screen',
