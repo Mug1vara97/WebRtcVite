@@ -1783,53 +1783,56 @@ function App() {
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
-      // Простое изменение значения gain
-      gainNode.gain.value = newVolume === 0 ? 0 : 1;
-      console.log('Set gain value to:', gainNode.gain.value);
-
-      setVolumes(prev => {
-        const newVolumes = new Map(prev);
-        newVolumes.set(peerId, newVolume);
-        return newVolumes;
-      });
-
-      // Обновляем состояние аудио элемента
+      // Обновляем состояние аудио элемента сначала
       const audio = audioRef.current.get(peerId);
       console.log('Audio element exists:', !!audio);
       
       if (audio) {
         if (newVolume > 0) {
-          audio.muted = false;
-          audio.play().catch(error => {
-            console.error('Error playing audio:', error);
-          });
-          console.log('Unmuted audio and attempted to play');
+          // При включении звука сначала подключаем узлы
+          const analyser = analyserNodesRef.current.get(peerId);
+          console.log('Analyser exists:', !!analyser);
+          
+          if (analyser && audio.srcObject) {
+            try {
+              // Отключаем старые соединения
+              gainNode.disconnect();
+              analyser.disconnect();
+              
+              // Создаем новое подключение
+              const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
+              source.connect(analyser);
+              analyser.connect(gainNode);
+              gainNode.connect(audioContextRef.current.destination);
+              
+              // Теперь устанавливаем значение gain
+              gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
+              console.log('Reconnected audio nodes and set gain to 1');
+              
+              // И только потом размучиваем аудио
+              audio.muted = false;
+              audio.play().catch(error => {
+                console.error('Error playing audio:', error);
+              });
+              console.log('Unmuted audio and attempted to play');
+            } catch (error) {
+              console.error('Error reconnecting audio nodes:', error);
+            }
+          }
         } else {
+          // При выключении звука просто устанавливаем gain в 0 и мутим
+          gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
           audio.muted = true;
-          console.log('Muted audio');
+          console.log('Set gain to 0 and muted audio');
         }
       }
 
-      // Проверяем подключение узлов
-      const analyser = analyserNodesRef.current.get(peerId);
-      console.log('Analyser exists:', !!analyser);
-      
-      if (analyser && audio && audio.srcObject) {
-        try {
-          // Отключаем старые соединения
-          gainNode.disconnect();
-          analyser.disconnect();
-          
-          // Создаем новое подключение
-          const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
-          source.connect(analyser);
-          analyser.connect(gainNode);
-          gainNode.connect(audioContextRef.current.destination);
-          console.log('Reconnected audio nodes');
-        } catch (error) {
-          console.error('Error reconnecting audio nodes:', error);
-        }
-      }
+      // Обновляем состояние громкости в UI
+      setVolumes(prev => {
+        const newVolumes = new Map(prev);
+        newVolumes.set(peerId, newVolume);
+        return newVolumes;
+      });
     }
   };
 
