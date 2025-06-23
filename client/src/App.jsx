@@ -816,7 +816,7 @@ const VideoOverlay = React.memo(({
   volume,
   children
 }) => {
-  // Use volume prop directly instead of local state
+  // Используем только пропс volume для определения состояния
   const isVolumeOff = volume === 0;
 
   return (
@@ -993,12 +993,8 @@ function App() {
   const [volumes, setVolumes] = useState(new Map());
   const [isJoining, setIsJoining] = useState(false);
   const [speakingStates, setSpeakingStates] = useState(new Map());
-  const [audioStates, setAudioStates] = useState(new Map());
+  const [audioStates, setAudioStates] = useState(new Map()); // Состояния аудио для всех пиров
   const [screenProducer, setScreenProducer] = useState(null);
-  
-  // Add volumeStatesRef for persistent volume state
-  const volumeStatesRef = useRef(new Map());
-  
   const [screenStream, setScreenStream] = useState(null);
   const [remoteScreens, setRemoteScreens] = useState(new Map());
   const [videoProducer, setVideoProducer] = useState(null);
@@ -1797,25 +1793,41 @@ function App() {
 
   const handleVolumeChange = (peerId) => {
     console.log('Volume change requested for peer:', peerId);
+    const gainNode = gainNodesRef.current.get(peerId);
     
-    // Get current volume from ref or default to 100
-    const currentVolume = volumeStatesRef.current.get(peerId) || 100;
+    // Получаем текущее состояние звука
+    const currentVolume = volumes.get(peerId) ?? 100;
     const newVolume = currentVolume === 0 ? 100 : 0;
     
-    // Update ref state
-    volumeStatesRef.current.set(peerId, newVolume);
+    console.log('Peer:', peerId, 'Current volume:', currentVolume, 'New volume:', newVolume);
+    console.log('GainNode exists:', !!gainNode);
     
-    // Update UI state
-    setVolumes(prev => {
-      const newVolumes = new Map(prev);
-      newVolumes.set(peerId, newVolume);
-      return newVolumes;
-    });
-    
-    // Apply changes to audio
-    const gainNode = gainNodesRef.current.get(peerId);
     if (gainNode) {
-      gainNode.gain.setValueAtTime(newVolume === 0 ? 0 : 1, audioContextRef.current.currentTime);
+      // Обновляем состояние аудио элемента
+      const audio = audioRef.current.get(peerId);
+      console.log('Audio element exists:', !!audio);
+      
+      if (audio) {
+        if (newVolume > 0) {
+          // Размучиваем только если глобальный звук включен
+          if (isAudioEnabled) {
+            audio.muted = false;
+          }
+          gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
+          console.log('Set gain to 1 and unmuted audio for peer:', peerId);
+        } else {
+          gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+          audio.muted = true;
+          console.log('Set gain to 0 and muted audio for peer:', peerId);
+        }
+      }
+
+      // Обновляем UI состояние
+      setVolumes(prev => {
+        const newVolumes = new Map(prev);
+        newVolumes.set(peerId, newVolume);
+        return newVolumes;
+      });
     }
   };
 
@@ -1823,15 +1835,14 @@ function App() {
   const handlePeerJoined = useCallback(({ peerId, isMuted }) => {
     console.log('Peer joined:', peerId, 'isMuted:', isMuted);
     
-    // Initialize volume state for new peer
-    volumeStatesRef.current.set(peerId, 100);
+    // Инициализируем состояние звука
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.set(peerId, 100);
       return newVolumes;
     });
 
-    // Update other states
+    // Обновляем остальные состояния
     setAudioStates(prev => new Map(prev).set(peerId, true));
     setPeers(prev => {
       const newPeers = new Map(prev);
@@ -1840,19 +1851,17 @@ function App() {
     });
   }, []);
 
-  // Обновляем обработчик отключения пира
   const handlePeerLeft = useCallback(({ peerId }) => {
     console.log('Peer left:', peerId);
     
-    // Clean up volume state
-    volumeStatesRef.current.delete(peerId);
+    // Очищаем состояние звука
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.delete(peerId);
       return newVolumes;
     });
 
-    // Clean up other states
+    // Очищаем остальные состояния
     setAudioStates(prev => {
       const newStates = new Map(prev);
       newStates.delete(peerId);
@@ -2183,17 +2192,17 @@ function App() {
       console.log('Removing consumer:', consumerId);
       const consumer = consumersRef.current.get(consumerId);
       if (consumer) {
-        // Close consumer
+        // Закрываем consumer
         consumer.close();
         consumersRef.current.delete(consumerId);
         
-        // Find and remove corresponding video
+        // Находим и удаляем соответствующее видео
         setRemoteVideos(prev => {
           const newVideos = new Map(prev);
           for (const [peerId, videoData] of newVideos.entries()) {
             if (videoData.consumerId === consumerId) {
               console.log('Found and removing video for consumer:', consumerId);
-              // Stop tracks
+              // Останавливаем треки
               if (videoData.stream) {
                 videoData.stream.getTracks().forEach(track => {
                   track.stop();
@@ -2206,7 +2215,7 @@ function App() {
           return newVideos;
         });
 
-        // Clean up audio elements
+        // Очищаем аудио элементы
         const producerSocketId = Array.from(audioRef.current.keys()).find(
           key => audioRef.current.get(key).srcObject?.getTracks()[0].id === consumer.track.id
         );
@@ -2225,8 +2234,6 @@ function App() {
             gainNodesRef.current.delete(producerSocketId);
           }
 
-          // Clean up volume states
-          volumeStatesRef.current.delete(producerSocketId);
           setVolumes(prev => {
             const newVolumes = new Map(prev);
             newVolumes.delete(producerSocketId);
