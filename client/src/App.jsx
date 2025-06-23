@@ -1029,7 +1029,7 @@ function App() {
   const animationFramesRef = useRef(new Map());
 
   // Добавляем новый ref для хранения состояний mute
-  const mutedPeersRef = useRef(new Map());
+  // const mutedPeersRef = useRef(new Map());
 
   // Добавляем новый ref для хранения состояний индивидуального mute
   const individualMutedPeersRef = useRef(new Map());
@@ -2379,82 +2379,93 @@ function App() {
 
   const startVideo = async () => {
     try {
-      if (!producerTransportRef.current) {
-        throw new Error('Transport not ready');
+      console.log('Starting video...');
+      
+      // Сохраняем текущие состояния звука
+      const currentVolumes = new Map(volumes);
+      const currentIndividualMutes = new Map(individualMutedPeersRef.current);
+      
+      // Очищаем старый стрим
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+        });
       }
 
-      // Остановить текущее видео если есть
-      if (isVideoEnabled) {
-        await stopVideo();
-      }
-
-      console.log('Requesting camera access...');
       const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
         video: {
-          width: { ideal: 1280, max: 1280 },
-          height: { ideal: 720, max: 720 },
-          frameRate: { ideal: 60, max: 60 },
-          facingMode: 'user',
-          aspectRatio: { ideal: 16/9 }
+          width: { min: 640, ideal: 1920 },
+          height: { min: 400, ideal: 1080 },
+          aspectRatio: 1.777777778,
+          frameRate: { max: 30 }
         }
       });
 
-      console.log('Camera access granted');
+      console.log('Got media stream');
+      localStreamRef.current = stream;
 
-      // Обработка остановки трека
-      stream.getVideoTracks()[0].onended = () => {
-        console.log('Camera track ended');
-        stopVideo();
-      };
+      // Восстанавливаем состояния звука
+      setVolumes(currentVolumes);
+      individualMutedPeersRef.current = currentIndividualMutes;
 
-      // Сохраняем поток
-      setVideoStream(stream);
+      // Применяем состояния к аудио элементам
+      audioRef.current.forEach((audio, peerId) => {
+        const gainNode = gainNodesRef.current.get(peerId);
+        if (gainNode && audio) {
+          const isIndividuallyMuted = individualMutedPeersRef.current.get(peerId) ?? false;
+          const volume = currentVolumes.get(peerId) ?? 100;
+          
+          gainNode.gain.setValueAtTime(volume === 0 ? 0 : 1, audioContextRef.current.currentTime);
+          if (isAudioEnabled) {
+            audio.muted = isIndividuallyMuted;
+          }
+        }
+      });
 
-      const videoTrack = stream.getVideoTracks()[0];
-      if (!videoTrack) {
-        throw new Error('No video track available');
+      // Остальной код без изменений...
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
 
-      console.log('Creating video producer...');
-      const producer = await producerTransportRef.current.produce({
-        track: videoTrack,
-        encodings: [
-          { maxBitrate: 1500000, scaleResolutionDownBy: 1, maxFramerate: 60 }
-        ],
-        codecOptions: {
-          videoGoogleStartBitrate: 1500,
-          videoGoogleMaxBitrate: 3000
-        },
-        appData: {
-          mediaType: 'webcam'
-        }
-      });
+      const audioTrack = stream.getAudioTracks()[0];
+      const videoTrack = stream.getVideoTracks()[0];
 
-      console.log('Video producer created:', producer.id);
+      if (producerTransportRef.current && audioTrack) {
+        const audioProducer = await producerTransportRef.current.produce({
+          track: audioTrack,
+          codecOptions: {
+            opusStereo: true,
+            opusDtx: true,
+          },
+          appData: { mediaType: 'webcam' }
+        });
+        
+        producersRef.current.set('audio', audioProducer);
+        console.log('Audio producer created:', audioProducer.id);
+      }
 
-      // Сохраняем producer
-      setVideoProducer(producer);
+      if (producerTransportRef.current && videoTrack) {
+        const videoProducer = await producerTransportRef.current.produce({
+          track: videoTrack,
+          codecOptions: {
+            videoGoogleStartBitrate: 1000
+          },
+          appData: { mediaType: 'webcam' }
+        });
+        
+        producersRef.current.set('video', videoProducer);
+        console.log('Video producer created:', videoProducer.id);
+      }
+
       setIsVideoEnabled(true);
-
-      // Обработчики событий producer
-      producer.on('transportclose', () => {
-        console.log('Video transport closed');
-        stopVideo();
-      });
-
-      producer.on('trackended', () => {
-        console.log('Video track ended');
-        stopVideo();
-      });
-
+      console.log('Video enabled');
     } catch (error) {
       console.error('Error starting video:', error);
-      if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-      }
-      setVideoStream(null);
-      setVideoProducer(null);
-      setIsVideoEnabled(false);
       setError('Failed to start video: ' + error.message);
     }
   };
