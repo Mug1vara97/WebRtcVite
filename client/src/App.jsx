@@ -1774,17 +1774,18 @@ function App() {
   }, [socketRef.current]);
 
   const handleVolumeChange = (peerId) => {
+    console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     const currentVolume = volumes.get(peerId) || 100;
     const newVolume = currentVolume === 0 ? 100 : 0;
     
+    console.log('Current volume:', currentVolume, 'New volume:', newVolume);
+    console.log('GainNode exists:', !!gainNode);
+    
     if (gainNode) {
-      // Плавно меняем значение gain
-      gainNode.gain.setValueAtTime(gainNode.gain.value, audioContextRef.current.currentTime);
-      gainNode.gain.linearRampToValueAtTime(
-        newVolume === 0 ? 0 : 1,
-        audioContextRef.current.currentTime + 0.1
-      );
+      // Простое изменение значения gain
+      gainNode.gain.value = newVolume === 0 ? 0 : 1;
+      console.log('Set gain value to:', gainNode.gain.value);
 
       setVolumes(prev => {
         const newVolumes = new Map(prev);
@@ -1794,27 +1795,40 @@ function App() {
 
       // Обновляем состояние аудио элемента
       const audio = audioRef.current.get(peerId);
+      console.log('Audio element exists:', !!audio);
+      
       if (audio) {
-        audio.muted = newVolume === 0;
-        
-        // Если включаем звук, убедимся что аудио воспроизводится
         if (newVolume > 0) {
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-            playPromise.catch(error => {
-              console.error('Error playing audio:', error);
-            });
-          }
+          audio.muted = false;
+          audio.play().catch(error => {
+            console.error('Error playing audio:', error);
+          });
+          console.log('Unmuted audio and attempted to play');
+        } else {
+          audio.muted = true;
+          console.log('Muted audio');
         }
       }
 
-      // Проверяем и переподключаем узлы если нужно
+      // Проверяем подключение узлов
       const analyser = analyserNodesRef.current.get(peerId);
-      if (analyser) {
-        const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
-        source.connect(analyser);
-        analyser.connect(gainNode);
-        gainNode.connect(audioContextRef.current.destination);
+      console.log('Analyser exists:', !!analyser);
+      
+      if (analyser && audio && audio.srcObject) {
+        try {
+          // Отключаем старые соединения
+          gainNode.disconnect();
+          analyser.disconnect();
+          
+          // Создаем новое подключение
+          const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
+          source.connect(analyser);
+          analyser.connect(gainNode);
+          gainNode.connect(audioContextRef.current.destination);
+          console.log('Reconnected audio nodes');
+        } catch (error) {
+          console.error('Error reconnecting audio nodes:', error);
+        }
       }
     }
   };
