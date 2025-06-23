@@ -134,9 +134,9 @@ const styles = {
     }
   },
   appBar: {
-    backgroundColor: '#202225',
+    backgroundColor: '#36393f',
     boxShadow: 'none',
-    borderBottom: '1px solid #292b2f'
+    borderBottom: '1px solid #202225'
   },
   toolbar: {
     minHeight: '48px',
@@ -162,7 +162,7 @@ const styles = {
   container: {
     flex: 1,
     padding: '16px',
-    backgroundColor: '#313338',
+    backgroundColor: '#36393f',
     display: 'flex',
     flexDirection: 'column',
     '@media (max-width: 600px)': {
@@ -171,54 +171,12 @@ const styles = {
   },
   videoGrid: {
     display: 'grid',
-    gap: '16px',
-    width: '100%',
-    maxWidth: '1600px',
-    margin: '0 auto',
-    height: 'calc(100vh - 140px)', // Учитываем высоту верхней и нижней панели
-    padding: '16px',
-    alignItems: 'stretch'
-  },
-  // Обновляем стили для разных раскладок
-  gridLayoutOne: {
-    gridTemplateColumns: '1fr',
-    '& > div': {
-      aspectRatio: '16/9',
-      maxHeight: 'calc(100vh - 172px)' // 140px + 2 * 16px padding
-    }
-  },
-  gridLayoutTwo: {
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    '& > div': {
-      aspectRatio: '16/9'
-    },
-    '& > div.screen-share': {
-      gridColumn: 'span 2',
-      marginBottom: '16px'
-    }
-  },
-  gridLayoutFour: {
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gridAutoRows: 'auto',
-    '& > div': {
-      aspectRatio: '16/9'
-    },
-    '& > div.screen-share': {
-      gridColumn: 'span 2',
-      marginBottom: '16px'
-    }
-  },
-  gridLayoutMore: {
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gridAutoRows: 'auto',
-    '& > div': {
-      aspectRatio: '16/9'
-    },
-    '& > div.screen-share': {
-      gridColumn: '1 / -1',
-      maxHeight: '50vh',
-      marginBottom: '16px'
-    }
+    gap: '8px',
+    padding: '16px',
+    width: '100%',
+    maxWidth: '1200px',
+    margin: '0 auto'
   },
   videoItem: {
     backgroundColor: '#2B2D31',
@@ -528,10 +486,7 @@ const styles = {
     borderRadius: '8px',
     overflow: 'hidden',
     '& video': {
-      objectFit: 'contain',
-      width: '100%',
-      height: '100%',
-      backgroundColor: '#000'
+      objectFit: 'contain'
     }
   },
   screenShareUserName: {
@@ -2814,7 +2769,7 @@ function App() {
         margin: '0 auto'
       }}>
         {isScreenSharing && screenStream && (
-          <Box sx={styles.videoItem} className="screen-share">
+          <Box sx={styles.videoItem}>
             <Box sx={styles.screenShareItem}>
               <VideoPlayer stream={screenStream} />
               <Box sx={styles.screenShareControls}>
@@ -2827,7 +2782,7 @@ function App() {
               </Box>
               <Box sx={styles.screenShareUserName}>
                 <ScreenShare sx={{ fontSize: 16 }} />
-                {userName} (Screen)
+                {userName}
               </Box>
             </Box>
           </Box>
@@ -2837,7 +2792,7 @@ function App() {
           if (!peer) return null;
 
           return (
-            <Box key={`screen-${peerId}`} sx={styles.videoItem} className="screen-share">
+            <Box key={peerId} sx={styles.videoItem}>
               <Box sx={styles.screenShareItem}>
                 <VideoPlayer stream={screenData?.stream || null} />
                 <Box sx={styles.screenShareControls}>
@@ -2850,7 +2805,7 @@ function App() {
                 </Box>
                 <Box sx={styles.screenShareUserName}>
                   <ScreenShare sx={{ fontSize: 16 }} />
-                  {peer.name} (Screen)
+                  {peer.name}
                 </Box>
               </Box>
             </Box>
@@ -3209,117 +3164,21 @@ function App() {
           </Toolbar>
         </AppBar>
         <Container sx={styles.container}>
-          {/* Определяем количество участников + демонстрации экрана */}
-          {fullscreenShare === null && (
-            <Box sx={{
-              ...styles.videoGrid,
-              ...((() => {
-                // Подсчитываем общее количество блоков
-                const screenShareCount = (isScreenSharing ? 1 : 0) + remoteScreens.size;
-                const totalBlocks = peers.size + 1 + screenShareCount; // +1 для локального пользователя
-
-                if (totalBlocks === 1) return styles.gridLayoutOne;
-                if (totalBlocks === 2) return styles.gridLayoutTwo;
-                if (totalBlocks <= 4) return styles.gridLayoutFour;
-                return styles.gridLayoutMore;
-              })())
-            }}>
-              {/* Screen sharing blocks first */}
-              {isScreenSharing && screenStream && (
-                <Box sx={styles.videoItem} className="screen-share">
-                  <Box sx={styles.screenShareItem}>
-                    <VideoPlayer stream={screenStream} />
-                    <Box sx={styles.screenShareControls}>
-                      <IconButton
-                        onClick={() => handleFullscreenToggle(socketRef.current?.id)}
-                        sx={styles.fullscreenButton}
-                      >
-                        <Fullscreen />
-                      </IconButton>
-                    </Box>
-                    <Box sx={styles.screenShareUserName}>
-                      <ScreenShare sx={{ fontSize: 16 }} />
-                      {userName} (Screen)
-                    </Box>
-                  </Box>
-                </Box>
-              )}
-              {Array.from(remoteScreens.entries()).map(([peerId, screenData]) => {
-                const peer = peers.get(peerId);
-                if (!peer) return null;
-
-                return (
-                  <Box key={`screen-${peerId}`} sx={styles.videoItem} className="screen-share">
-                    <Box sx={styles.screenShareItem}>
-                      <VideoPlayer stream={screenData?.stream || null} />
-                      <Box sx={styles.screenShareControls}>
-                        <IconButton
-                          onClick={() => handleFullscreenToggle(peerId)}
-                          sx={styles.fullscreenButton}
-                        >
-                          <Fullscreen />
-                        </IconButton>
-                      </Box>
-                      <Box sx={styles.screenShareUserName}>
-                        <ScreenShare sx={{ fontSize: 16 }} />
-                        {peer.name} (Screen)
-                      </Box>
-                    </Box>
-                  </Box>
-                );
-              })}
-
-              {/* Local user */}
-              <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
-                {isVideoEnabled && videoStream ? (
-                  <VideoView 
-                    stream={videoStream} 
-                    peerName={userName}
-                    isMuted={isMuted}
-                    isSpeaking={speakingStates.get(socketRef.current?.id)}
-                    isAudioEnabled={isAudioEnabled}
-                    isLocal={true}
-                    isAudioMuted={isMuted}
-                  />
-                ) : (
-                  <div style={{ 
-                    position: 'relative', 
-                    width: '100%', 
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    alignItems: 'center'
-                  }}>
-                    <Box sx={styles.userAvatar}>
-                      {userName[0].toUpperCase()}
-                    </Box>
-                    <VideoOverlay
+          <Box sx={styles.videoGrid}>
+            {/* Only render video grid when not in fullscreen mode */}
+            {fullscreenShare === null && (
+              <>
+                {/* Local user */}
+                <Box sx={styles.videoItem} className={speakingStates.get(socketRef.current?.id) ? 'speaking' : ''}>
+                  {isVideoEnabled && videoStream ? (
+                    <VideoView 
+                      stream={videoStream} 
                       peerName={userName}
                       isMuted={isMuted}
                       isSpeaking={speakingStates.get(socketRef.current?.id)}
                       isAudioEnabled={isAudioEnabled}
                       isLocal={true}
                       isAudioMuted={isMuted}
-                    />
-                  </div>
-                )}
-              </Box>
-
-              {/* Remote users */}
-              {Array.from(peers.values()).map((peer) => (
-                <Box key={peer.id} sx={styles.videoItem} className={speakingStates.get(peer.id) ? 'speaking' : ''}>
-                  {remoteVideos.get(peer.id)?.stream ? (
-                    <VideoView
-                      stream={remoteVideos.get(peer.id).stream}
-                      peerName={peer.name}
-                      isMuted={peer.isMuted}
-                      isSpeaking={speakingStates.get(peer.id)}
-                      isAudioEnabled={audioStates.get(peer.id)}
-                      isLocal={false}
-                      onVolumeClick={() => handleVolumeChange(peer.id)}
-                      volume={volumes.get(peer.id) || 100}
-                      isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                     />
                   ) : (
                     <div style={{ 
@@ -3332,9 +3191,26 @@ function App() {
                       alignItems: 'center'
                     }}>
                       <Box sx={styles.userAvatar}>
-                        {peer.name[0].toUpperCase()}
+                        {userName[0].toUpperCase()}
                       </Box>
                       <VideoOverlay
+                        peerName={userName}
+                        isMuted={isMuted}
+                        isSpeaking={speakingStates.get(socketRef.current?.id)}
+                        isAudioEnabled={isAudioEnabled}
+                        isLocal={true}
+                        isAudioMuted={isMuted}
+                      />
+                    </div>
+                  )}
+                </Box>
+
+                {/* Remote users */}
+                {Array.from(peers.values()).map((peer) => (
+                  <Box key={peer.id} sx={styles.videoItem} className={speakingStates.get(peer.id) ? 'speaking' : ''}>
+                    {remoteVideos.get(peer.id)?.stream ? (
+                      <VideoView
+                        stream={remoteVideos.get(peer.id).stream}
                         peerName={peer.name}
                         isMuted={peer.isMuted}
                         isSpeaking={speakingStates.get(peer.id)}
@@ -3344,15 +3220,39 @@ function App() {
                         volume={volumes.get(peer.id) || 100}
                         isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                       />
-                    </div>
-                  )}
-                </Box>
-              ))}
-            </Box>
-          )}
+                    ) : (
+                      <div style={{ 
+                        position: 'relative', 
+                        width: '100%', 
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Box sx={styles.userAvatar}>
+                          {peer.name[0].toUpperCase()}
+                        </Box>
+                        <VideoOverlay
+                          peerName={peer.name}
+                          isMuted={peer.isMuted}
+                          isSpeaking={speakingStates.get(peer.id)}
+                          isAudioEnabled={audioStates.get(peer.id)}
+                          isLocal={false}
+                          onVolumeClick={() => handleVolumeChange(peer.id)}
+                          volume={volumes.get(peer.id) || 100}
+                          isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
+                        />
+                      </div>
+                    )}
+                  </Box>
+                ))}
+              </>
+            )}
 
-          {/* Fullscreen share */}
-          {fullscreenShare !== null && renderScreenShares}
+            {/* Screen sharing */}
+            {renderScreenShares}
+          </Box>
         </Container>
         <Box sx={styles.bottomBar}>
           <Box sx={styles.controlsContainer}>
