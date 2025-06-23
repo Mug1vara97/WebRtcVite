@@ -1780,6 +1780,12 @@ function App() {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     
+    // Если глобально звук выключен, не меняем состояние
+    if (!isAudioEnabled) {
+      console.log('Global audio is disabled, ignoring volume change request');
+      return;
+    }
+    
     // Получаем текущее состояние mute из ref
     const isMuted = mutedPeersRef.current.get(peerId) ?? false;
     const newIsMuted = !isMuted;
@@ -1818,6 +1824,33 @@ function App() {
       });
     }
   };
+
+  // Обновляем эффект для отслеживания глобального состояния аудио
+  useEffect(() => {
+    isAudioEnabledRef.current = isAudioEnabled;
+    
+    // Если глобально выключили звук, мутим все аудио элементы
+    if (!isAudioEnabled) {
+      audioRef.current.forEach((audio, peerId) => {
+        const gainNode = gainNodesRef.current.get(peerId);
+        if (gainNode && audio) {
+          gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+          audio.muted = true;
+        }
+      });
+    } else {
+      // Если включили звук, восстанавливаем состояния тех пиров, которые не были замучены
+      audioRef.current.forEach((audio, peerId) => {
+        const gainNode = gainNodesRef.current.get(peerId);
+        const isMuted = mutedPeersRef.current.get(peerId) ?? false;
+        
+        if (gainNode && audio && !isMuted) {
+          gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
+          audio.muted = false;
+        }
+      });
+    }
+  }, [isAudioEnabled]);
 
   // Добавляем обработчик для инициализации состояния при подключении нового пира
   const handlePeerJoined = useCallback(({ peerId }) => {
