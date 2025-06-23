@@ -865,6 +865,13 @@ const VideoOverlay = React.memo(({
       {!isLocal && (
         <IconButton
           onClick={handleVolumeIconClick}
+          className={`volumeControl ${
+            isVolumeOff
+              ? 'muted'
+              : isSpeaking
+              ? 'speaking'
+              : 'silent'
+          }`}
           sx={{
             position: 'absolute',
             bottom: 8,
@@ -876,6 +883,26 @@ const VideoOverlay = React.memo(({
             '&:hover': {
               backgroundColor: 'rgba(0,0,0,0.7)',
               transform: 'scale(1.1)'
+            },
+            '&.muted': {
+              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
+              animation: 'mutePulse 2s infinite !important',
+              '&:hover': {
+                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
+                transform: 'scale(1.1)'
+              }
+            },
+            '&.speaking': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#3ba55c'
+              }
+            },
+            '&.silent': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#B5BAC1'
+              }
             }
           }}
         >
