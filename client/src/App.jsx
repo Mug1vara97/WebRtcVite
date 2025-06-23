@@ -1800,15 +1800,30 @@ function App() {
               gainNode.disconnect();
               analyser.disconnect();
               
-              // Создаем новое подключение
+              // Создаем новое подключение с сохранением настроек анализатора
               const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
-              source.connect(analyser);
-              analyser.connect(gainNode);
+              
+              // Создаем новый анализатор с теми же настройками
+              const newAnalyser = createAudioAnalyser(audioContextRef.current);
+              newAnalyser.fftSize = analyser.fftSize;
+              newAnalyser.smoothingTimeConstant = analyser.smoothingTimeConstant;
+              newAnalyser.minDecibels = analyser.minDecibels;
+              newAnalyser.maxDecibels = analyser.maxDecibels;
+              
+              // Подключаем узлы
+              source.connect(newAnalyser);
+              newAnalyser.connect(gainNode);
               gainNode.connect(audioContextRef.current.destination);
+              
+              // Обновляем ссылку на анализатор
+              analyserNodesRef.current.set(peerId, newAnalyser);
               
               // Теперь устанавливаем значение gain
               gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
-              console.log('Reconnected audio nodes and set gain to 1');
+              console.log('Reconnected audio nodes with preserved settings and set gain to 1');
+              
+              // Перезапускаем определение голоса с новым анализатором
+              detectSpeaking(newAnalyser, peerId);
               
               // И только потом размучиваем аудио
               audio.muted = false;
