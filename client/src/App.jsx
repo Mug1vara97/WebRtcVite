@@ -1028,6 +1028,9 @@ function App() {
   const analyserNodesRef = useRef(new Map());
   const animationFramesRef = useRef(new Map());
 
+  // Добавляем новый ref для хранения состояний mute
+  const mutedPeersRef = useRef(new Map());
+
   useEffect(() => {
     const resumeAudioContext = async () => {
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -1776,11 +1779,13 @@ function App() {
   const handleVolumeChange = (peerId) => {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
-    const currentVolume = volumes.get(peerId) ?? 100;
-    const isMuted = currentVolume === 0;
-    const newVolume = isMuted ? 100 : 0;
     
-    console.log('Current volume:', currentVolume, 'New volume:', newVolume, 'Is currently muted:', isMuted);
+    // Получаем текущее состояние mute из ref
+    const isMuted = mutedPeersRef.current.get(peerId) ?? false;
+    const newIsMuted = !isMuted;
+    const newVolume = newIsMuted ? 0 : 100;
+    
+    console.log('Peer:', peerId, 'Current mute state:', isMuted, 'New mute state:', newIsMuted);
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
@@ -1789,18 +1794,21 @@ function App() {
       console.log('Audio element exists:', !!audio);
       
       if (audio) {
-        if (isMuted) { // Если сейчас замучено - размучиваем
-          // Просто устанавливаем значение gain в 1
+        if (!newIsMuted) { // Размучиваем
+          // Устанавливаем значение gain в 1
           gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
           audio.muted = false;
-          console.log('Set gain to 1 and unmuted audio');
-        } else { // Если сейчас не замучено - мучиваем
-          // Просто устанавливаем значение gain в 0
+          console.log('Set gain to 1 and unmuted audio for peer:', peerId);
+        } else { // Мучиваем
+          // Устанавливаем значение gain в 0
           gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
           audio.muted = true;
-          console.log('Set gain to 0 and muted audio');
+          console.log('Set gain to 0 and muted audio for peer:', peerId);
         }
       }
+
+      // Сохраняем новое состояние mute в ref
+      mutedPeersRef.current.set(peerId, newIsMuted);
 
       // Обновляем состояние громкости в UI
       setVolumes(prev => {
@@ -1810,6 +1818,27 @@ function App() {
       });
     }
   };
+
+  // Добавляем обработчик для инициализации состояния при подключении нового пира
+  const handlePeerJoined = useCallback(({ peerId }) => {
+    // Устанавливаем начальное состояние - не замучен
+    mutedPeersRef.current.set(peerId, false);
+    setVolumes(prev => {
+      const newVolumes = new Map(prev);
+      newVolumes.set(peerId, 100);
+      return newVolumes;
+    });
+  }, []);
+
+  // Добавляем очистку при отключении пира
+  const handlePeerLeft = useCallback(({ peerId }) => {
+    mutedPeersRef.current.delete(peerId);
+    setVolumes(prev => {
+      const newVolumes = new Map(prev);
+      newVolumes.delete(peerId);
+      return newVolumes;
+    });
+  }, []);
 
   const initializeDevice = async (routerRtpCapabilities) => {
     try {
@@ -2907,6 +2936,20 @@ function App() {
   useEffect(() => {
     isAudioEnabledRef.current = isAudioEnabled;
   }, [isAudioEnabled]);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (socket) {
+      socket.on('peerJoined', handlePeerJoined);
+      socket.on('peerLeft', handlePeerLeft);
+    }
+    return () => {
+      if (socket) {
+        socket.off('peerJoined', handlePeerJoined);
+        socket.off('peerLeft', handlePeerLeft);
+      }
+    };
+  }, [handlePeerJoined, handlePeerLeft]);
 
   if (!isJoined) {
     return (
