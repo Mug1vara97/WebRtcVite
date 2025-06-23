@@ -171,14 +171,15 @@ const styles = {
   },
   videoGrid: {
     display: 'grid',
-    gap: '8px',
+    gap: '16px',
     width: '100%',
     maxWidth: '1600px',
     margin: '0 auto',
     height: 'calc(100vh - 140px)', // Учитываем высоту верхней и нижней панели
-    padding: '16px'
+    padding: '16px',
+    alignItems: 'stretch'
   },
-  // Добавляем новые стили для разных раскладок
+  // Обновляем стили для разных раскладок
   gridLayoutOne: {
     gridTemplateColumns: '1fr',
     '& > div': {
@@ -190,19 +191,33 @@ const styles = {
     gridTemplateColumns: 'repeat(2, 1fr)',
     '& > div': {
       aspectRatio: '16/9'
+    },
+    '& > div.screen-share': {
+      gridColumn: 'span 2',
+      marginBottom: '16px'
     }
   },
   gridLayoutFour: {
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gridTemplateRows: 'repeat(2, 1fr)',
+    gridAutoRows: 'auto',
     '& > div': {
-      aspectRatio: '1/1'
+      aspectRatio: '16/9'
+    },
+    '& > div.screen-share': {
+      gridColumn: 'span 2',
+      marginBottom: '16px'
     }
   },
   gridLayoutMore: {
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gridAutoRows: 'auto',
     '& > div': {
       aspectRatio: '16/9'
+    },
+    '& > div.screen-share': {
+      gridColumn: '1 / -1',
+      maxHeight: '50vh',
+      marginBottom: '16px'
     }
   },
   videoItem: {
@@ -513,7 +528,10 @@ const styles = {
     borderRadius: '8px',
     overflow: 'hidden',
     '& video': {
-      objectFit: 'contain'
+      objectFit: 'contain',
+      width: '100%',
+      height: '100%',
+      backgroundColor: '#000'
     }
   },
   screenShareUserName: {
@@ -2796,7 +2814,7 @@ function App() {
         margin: '0 auto'
       }}>
         {isScreenSharing && screenStream && (
-          <Box sx={styles.videoItem}>
+          <Box sx={styles.videoItem} className="screen-share">
             <Box sx={styles.screenShareItem}>
               <VideoPlayer stream={screenStream} />
               <Box sx={styles.screenShareControls}>
@@ -2809,7 +2827,7 @@ function App() {
               </Box>
               <Box sx={styles.screenShareUserName}>
                 <ScreenShare sx={{ fontSize: 16 }} />
-                {userName}
+                {userName} (Screen)
               </Box>
             </Box>
           </Box>
@@ -2819,7 +2837,7 @@ function App() {
           if (!peer) return null;
 
           return (
-            <Box key={peerId} sx={styles.videoItem}>
+            <Box key={`screen-${peerId}`} sx={styles.videoItem} className="screen-share">
               <Box sx={styles.screenShareItem}>
                 <VideoPlayer stream={screenData?.stream || null} />
                 <Box sx={styles.screenShareControls}>
@@ -2832,7 +2850,7 @@ function App() {
                 </Box>
                 <Box sx={styles.screenShareUserName}>
                   <ScreenShare sx={{ fontSize: 16 }} />
-                  {peer.name}
+                  {peer.name} (Screen)
                 </Box>
               </Box>
             </Box>
@@ -3208,7 +3226,7 @@ function App() {
             }}>
               {/* Screen sharing blocks first */}
               {isScreenSharing && screenStream && (
-                <Box sx={styles.videoItem}>
+                <Box sx={styles.videoItem} className="screen-share">
                   <Box sx={styles.screenShareItem}>
                     <VideoPlayer stream={screenStream} />
                     <Box sx={styles.screenShareControls}>
@@ -3231,7 +3249,7 @@ function App() {
                 if (!peer) return null;
 
                 return (
-                  <Box key={`screen-${peerId}`} sx={styles.videoItem}>
+                  <Box key={`screen-${peerId}`} sx={styles.videoItem} className="screen-share">
                     <Box sx={styles.screenShareItem}>
                       <VideoPlayer stream={screenData?.stream || null} />
                       <Box sx={styles.screenShareControls}>
