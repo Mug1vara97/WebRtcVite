@@ -812,10 +812,15 @@ const VideoOverlay = React.memo(({
   isSpeaking,
   isAudioEnabled,
   isLocal,
-  onVolumeClick,
-  volume,
   children
 }) => {
+  const [isVolumeOff, setIsVolumeOff] = useState(false);
+
+  const handleVolumeIconClick = (e) => {
+    e.stopPropagation();
+    setIsVolumeOff(prev => !prev);
+  };
+
   return (
     <div style={{
       position: 'absolute',
@@ -859,14 +864,7 @@ const VideoOverlay = React.memo(({
       
       {!isLocal && (
         <IconButton
-          onClick={onVolumeClick}
-          className={`volumeControl ${
-            volume === 0
-              ? 'muted'
-              : isSpeaking
-              ? 'speaking'
-              : 'silent'
-          }`}
+          onClick={handleVolumeIconClick}
           sx={{
             position: 'absolute',
             bottom: 8,
@@ -875,32 +873,14 @@ const VideoOverlay = React.memo(({
             borderRadius: '50%',
             transition: 'all 0.2s ease',
             zIndex: 10,
-            '&.muted': {
-              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
-              '&:hover': {
-                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
-                transform: 'scale(1.1)'
-              },
-              '& .MuiSvgIcon-root': {
-                color: '#ed4245'
-              }
-            },
-            '&.speaking': {
-              backgroundColor: 'transparent',
-              '& .MuiSvgIcon-root': {
-                color: '#3ba55c'
-              }
-            },
-            '&.silent': {
-              backgroundColor: 'transparent',
-              '& .MuiSvgIcon-root': {
-                color: '#B5BAC1'
-              }
+            '&:hover': {
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              transform: 'scale(1.1)'
             }
           }}
         >
-          {volume === 0 ? (
-            <VolumeOff sx={{ fontSize: 20 }} />
+          {isVolumeOff ? (
+            <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
           ) : (
             <VolumeUp sx={{ fontSize: 20 }} />
           )}
