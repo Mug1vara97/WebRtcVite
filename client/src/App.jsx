@@ -38,7 +38,9 @@ import {
   NoiseControlOff,
   ExpandMore,
   HeadsetOff,
-  Headset
+  Headset,
+  Fullscreen,
+  FullscreenExit
 } from '@mui/icons-material';
 import { Device } from 'mediasoup-client';
 import { io } from 'socket.io-client';
@@ -498,6 +500,45 @@ const styles = {
     gap: '6px',
     zIndex: 2
   },
+  fullscreenOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
+    zIndex: 9999,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  fullscreenVideo: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain'
+  },
+  fullscreenControls: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    display: 'flex',
+    gap: '8px'
+  },
+  fullscreenUserName: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+    color: '#ffffff',
+    fontSize: '16px',
+    fontWeight: 500,
+    padding: '8px 16px',
+    borderRadius: '4px',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  }
 };
 
 const setAudioOutput = async (audio, useEarpiece = true) => {
@@ -1038,6 +1079,8 @@ function App() {
 
   // Добавляем новый ref для хранения состояний индивидуального mute
   const individualMutedPeersRef = useRef(new Map());
+
+  const [fullscreenShare, setFullscreenShare] = useState(null);
 
   useEffect(() => {
     const resumeAudioContext = async () => {
@@ -2654,6 +2697,51 @@ function App() {
 
   // Обновляем renderScreenShares
   const renderScreenShares = useMemo(() => {
+    // If we're in fullscreen mode, render only the fullscreen share
+    if (fullscreenShare !== null) {
+      const screenData = fullscreenShare === socketRef.current?.id ? 
+        { stream: screenStream, name: userName } : 
+        { 
+          stream: remoteScreens.get(fullscreenShare)?.stream,
+          name: peers.get(fullscreenShare)?.name
+        };
+
+      if (!screenData.stream) {
+        setFullscreenShare(null);
+        return null;
+      }
+
+      return (
+        <Box sx={styles.fullscreenOverlay}>
+          <video
+            autoPlay
+            playsInline
+            style={styles.fullscreenVideo}
+            srcObject={screenData.stream}
+          />
+          <Box sx={styles.fullscreenControls}>
+            <IconButton
+              onClick={() => handleFullscreenToggle(fullscreenShare)}
+              sx={{
+                color: '#ffffff',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)'
+                }
+              }}
+            >
+              <FullscreenExit />
+            </IconButton>
+          </Box>
+          <Typography sx={styles.fullscreenUserName}>
+            <ScreenShare sx={{ fontSize: 18 }} />
+            {screenData.name}
+          </Typography>
+        </Box>
+      );
+    }
+
+    // Regular grid view
     return (
       <Box sx={{
         display: 'grid',
@@ -2667,10 +2755,25 @@ function App() {
           <Box sx={styles.videoItem}>
             <Box sx={styles.screenShareItem}>
               <VideoPlayer stream={screenStream} />
-              <Typography sx={styles.screenShareUserName}>
+              <Box sx={styles.screenShareUserName}>
                 <ScreenShare sx={{ fontSize: 16 }} />
                 {userName}
-              </Typography>
+              </Box>
+              <IconButton
+                onClick={() => handleFullscreenToggle(socketRef.current?.id)}
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  color: '#ffffff',
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)'
+                  }
+                }}
+              >
+                <Fullscreen />
+              </IconButton>
             </Box>
           </Box>
         )}
@@ -2682,17 +2785,32 @@ function App() {
             <Box key={peerId} sx={styles.videoItem}>
               <Box sx={styles.screenShareItem}>
                 <VideoPlayer stream={screenData?.stream || null} />
-                <Typography sx={styles.screenShareUserName}>
+                <Box sx={styles.screenShareUserName}>
                   <ScreenShare sx={{ fontSize: 16 }} />
                   {peer.name}
-                </Typography>
+                </Box>
+                <IconButton
+                  onClick={() => handleFullscreenToggle(peerId)}
+                  sx={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    color: '#ffffff',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    '&:hover': {
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)'
+                    }
+                  }}
+                >
+                  <Fullscreen />
+                </IconButton>
               </Box>
             </Box>
           );
         })}
       </Box>
     );
-  }, [isScreenSharing, screenStream, remoteScreens, peers, userName]);
+  }, [isScreenSharing, screenStream, remoteScreens, peers, userName, fullscreenShare, socketRef.current?.id]);
 
   // Обновляем renderVideos
   const renderVideos = useMemo(() => {
@@ -2978,6 +3096,15 @@ function App() {
       }
     };
   }, [handlePeerJoined, handlePeerLeft]);
+
+  // Add fullscreen handlers
+  const handleFullscreenToggle = (peerId) => {
+    if (fullscreenShare === peerId) {
+      setFullscreenShare(null);
+    } else {
+      setFullscreenShare(peerId);
+    }
+  };
 
   if (!isJoined) {
     return (
