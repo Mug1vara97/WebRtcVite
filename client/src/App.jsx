@@ -816,57 +816,46 @@ const VolumeIcon = React.memo(({
   
   return !isLocal ? (
     <IconButton
-      onClick={onVolumeClick}
-      className={`volumeControl ${
-        isVolumeOff
-          ? 'muted'
-          : isSpeaking
-          ? 'speaking'
-          : 'silent'
-      }`}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onVolumeClick) {
+          onVolumeClick();
+        }
+      }}
       sx={{
         position: 'absolute',
         bottom: 8,
         right: 8,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: isVolumeOff 
+          ? 'rgba(237, 66, 69, 0.1)'
+          : 'rgba(0,0,0,0.5)',
         borderRadius: '50%',
         transition: 'all 0.2s ease',
         zIndex: 10,
+        animation: isVolumeOff ? 'mutePulse 2s infinite' : 'none',
         '&:hover': {
-          backgroundColor: 'rgba(0,0,0,0.7)',
+          backgroundColor: isVolumeOff 
+            ? 'rgba(237, 66, 69, 0.2)'
+            : 'rgba(0,0,0,0.7)',
           transform: 'scale(1.1)'
         },
-        '&.muted': {
-          backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
-          animation: 'mutePulse 2s infinite !important',
-          '&:hover': {
-            backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
-            transform: 'scale(1.1)'
-          }
-        },
-        '&.speaking': {
-          backgroundColor: 'transparent',
-          '& .MuiSvgIcon-root': {
-            color: '#3ba55c'
-          }
-        },
-        '&.silent': {
-          backgroundColor: 'transparent',
-          '& .MuiSvgIcon-root': {
-            color: '#B5BAC1'
-          }
+        '& .MuiSvgIcon-root': {
+          color: isVolumeOff 
+            ? '#ed4245'
+            : isSpeaking
+            ? '#3ba55c'
+            : '#B5BAC1'
         }
       }}
     >
       {isVolumeOff ? (
-        <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
+        <VolumeOff sx={{ fontSize: 20 }} />
       ) : (
         <VolumeUp sx={{ fontSize: 20 }} />
       )}
     </IconButton>
   ) : null;
 }, (prevProps, nextProps) => {
-  // Оптимизация: перерисовываем только если изменились релевантные свойства
   return (
     prevProps.isSpeaking === nextProps.isSpeaking &&
     prevProps.volume === nextProps.volume
