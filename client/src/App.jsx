@@ -805,64 +805,7 @@ const VideoPlayer = React.memo(({ stream }) => {
   );
 }, (prevProps, nextProps) => prevProps.stream === nextProps.stream);
 
-// Упрощенный компонент VolumeIcon (не зависит от видеопотока)
-const VolumeIcon = React.memo(({ 
-  isSpeaking, 
-  isLocal,
-  volume,
-  onVolumeClick 
-}) => {
-  const isVolumeOff = volume === 0;
-  
-  return !isLocal ? (
-    <IconButton
-      onClick={(e) => {
-        e.stopPropagation();
-        if (onVolumeClick) {
-          onVolumeClick();
-        }
-      }}
-      sx={{
-        position: 'absolute',
-        bottom: 8,
-        right: 8,
-        backgroundColor: isVolumeOff 
-          ? 'rgba(237, 66, 69, 0.1)'
-          : 'rgba(0,0,0,0.5)',
-        borderRadius: '50%',
-        transition: 'all 0.2s ease',
-        zIndex: 10,
-        animation: isVolumeOff ? 'mutePulse 2s infinite' : 'none',
-        '&:hover': {
-          backgroundColor: isVolumeOff 
-            ? 'rgba(237, 66, 69, 0.2)'
-            : 'rgba(0,0,0,0.7)',
-          transform: 'scale(1.1)'
-        },
-        '& .MuiSvgIcon-root': {
-          color: isVolumeOff 
-            ? '#ed4245'
-            : isSpeaking
-            ? '#3ba55c'
-            : '#B5BAC1'
-        }
-      }}
-    >
-      {isVolumeOff ? (
-        <VolumeOff sx={{ fontSize: 20 }} />
-      ) : (
-        <VolumeUp sx={{ fontSize: 20 }} />
-      )}
-    </IconButton>
-  ) : null;
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.isSpeaking === nextProps.isSpeaking &&
-    prevProps.volume === nextProps.volume
-  );
-});
-
-// Упрощенный VideoOverlay
+// Компонент оверлея (перерисовывается отдельно от видео)
 const VideoOverlay = React.memo(({ 
   peerName, 
   isMuted, 
@@ -871,8 +814,23 @@ const VideoOverlay = React.memo(({
   isLocal,
   onVolumeClick,
   volume,
+  isAudioMuted,
   children
 }) => {
+  const [isVolumeOff, setIsVolumeOff] = useState(isAudioMuted || volume === 0);
+
+  useEffect(() => {
+    setIsVolumeOff(isAudioMuted || volume === 0);
+  }, [volume, isAudioMuted]);
+
+  const handleVolumeIconClick = (e) => {
+    e.stopPropagation();
+    setIsVolumeOff(prev => !prev);
+    if (onVolumeClick) {
+      onVolumeClick();
+    }
+  };
+
   return (
     <div style={{
       position: 'absolute',
@@ -887,6 +845,7 @@ const VideoOverlay = React.memo(({
       padding: '12px',
       background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)'
     }}>
+      {/* Основной блок с информацией */}
       <Box sx={{
         display: 'flex',
         alignItems: 'center',
@@ -913,14 +872,59 @@ const VideoOverlay = React.memo(({
         {peerName}
       </Box>
       
-      {children}
+      {!isLocal && (
+        <IconButton
+          onClick={handleVolumeIconClick}
+          className={`volumeControl ${
+            isVolumeOff
+              ? 'muted'
+              : isSpeaking
+              ? 'speaking'
+              : 'silent'
+          }`}
+          sx={{
+            position: 'absolute',
+            bottom: 8,
+            right: 8,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderRadius: '50%',
+            transition: 'all 0.2s ease',
+            zIndex: 10,
+            '&:hover': {
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              transform: 'scale(1.1)'
+            },
+            '&.muted': {
+              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
+              animation: 'mutePulse 2s infinite !important',
+              '&:hover': {
+                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
+                transform: 'scale(1.1)'
+              }
+            },
+            '&.speaking': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#3ba55c'
+              }
+            },
+            '&.silent': {
+              backgroundColor: 'transparent',
+              '& .MuiSvgIcon-root': {
+                color: '#B5BAC1'
+              }
+            }
+          }}
+        >
+          {isVolumeOff ? (
+            <VolumeOff sx={{ fontSize: 20, color: '#ed4245' }} />
+          ) : (
+            <VolumeUp sx={{ fontSize: 20 }} />
+          )}
+        </IconButton>
+      )}
       
-      <VolumeIcon 
-        isSpeaking={isSpeaking}
-        isLocal={isLocal}
-        volume={volume}
-        onVolumeClick={onVolumeClick}
-      />
+      {children}
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -928,11 +932,14 @@ const VideoOverlay = React.memo(({
     prevProps.peerName === nextProps.peerName &&
     prevProps.isMuted === nextProps.isMuted &&
     prevProps.isSpeaking === nextProps.isSpeaking &&
-    prevProps.isAudioEnabled === nextProps.isAudioEnabled
+    prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
+    prevProps.volume === nextProps.volume &&
+    prevProps.isAudioMuted === nextProps.isAudioMuted &&
+    prevProps.children === nextProps.children
   );
 });
 
-// Оптимизированный VideoView
+// Оптимизированный компонент для отображения видео
 const VideoView = React.memo(({ 
   stream, 
   peerName, 
@@ -942,6 +949,7 @@ const VideoView = React.memo(({
   isLocal,
   onVolumeClick,
   volume,
+  isAudioMuted,
   children 
 }) => {
   return (
@@ -962,6 +970,7 @@ const VideoView = React.memo(({
         isLocal={isLocal}
         onVolumeClick={onVolumeClick}
         volume={volume}
+        isAudioMuted={isAudioMuted}
       >
         {children}
       </VideoOverlay>
@@ -969,10 +978,14 @@ const VideoView = React.memo(({
   );
 }, (prevProps, nextProps) => {
   return (
+    prevProps.stream === nextProps.stream &&
     prevProps.peerName === nextProps.peerName &&
     prevProps.isMuted === nextProps.isMuted &&
     prevProps.isSpeaking === nextProps.isSpeaking &&
-    prevProps.isAudioEnabled === nextProps.isAudioEnabled
+    prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
+    prevProps.volume === nextProps.volume &&
+    prevProps.isAudioMuted === nextProps.isAudioMuted &&
+    prevProps.children === nextProps.children
   );
 });
 
@@ -3038,6 +3051,7 @@ function App() {
                   isSpeaking={speakingStates.get(socketRef.current?.id)}
                   isAudioEnabled={isAudioEnabled}
                   isLocal={true}
+                  isAudioMuted={isMuted}
                 />
               ) : (
                 <div style={{ 
@@ -3058,6 +3072,7 @@ function App() {
                     isSpeaking={speakingStates.get(socketRef.current?.id)}
                     isAudioEnabled={isAudioEnabled}
                     isLocal={true}
+                    isAudioMuted={isMuted}
                   />
                 </div>
               )}
@@ -3076,6 +3091,7 @@ function App() {
                     isLocal={false}
                     onVolumeClick={() => handleVolumeChange(peer.id)}
                     volume={volumes.get(peer.id) || 100}
+                    isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                   />
                 ) : (
                   <div style={{ 
@@ -3098,6 +3114,7 @@ function App() {
                       isLocal={false}
                       onVolumeClick={() => handleVolumeChange(peer.id)}
                       volume={volumes.get(peer.id) || 100}
+                      isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                     />
                   </div>
                 )}
