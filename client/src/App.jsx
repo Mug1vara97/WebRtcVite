@@ -1779,17 +1779,42 @@ function App() {
     const newVolume = currentVolume === 0 ? 100 : 0;
     
     if (gainNode) {
-      gainNode.gain.value = newVolume === 0 ? 0 : 1;
+      // Плавно меняем значение gain
+      gainNode.gain.setValueAtTime(gainNode.gain.value, audioContextRef.current.currentTime);
+      gainNode.gain.linearRampToValueAtTime(
+        newVolume === 0 ? 0 : 1,
+        audioContextRef.current.currentTime + 0.1
+      );
+
       setVolumes(prev => {
         const newVolumes = new Map(prev);
         newVolumes.set(peerId, newVolume);
         return newVolumes;
       });
 
-      // Также обновляем состояние аудио элемента
+      // Обновляем состояние аудио элемента
       const audio = audioRef.current.get(peerId);
       if (audio) {
         audio.muted = newVolume === 0;
+        
+        // Если включаем звук, убедимся что аудио воспроизводится
+        if (newVolume > 0) {
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(error => {
+              console.error('Error playing audio:', error);
+            });
+          }
+        }
+      }
+
+      // Проверяем и переподключаем узлы если нужно
+      const analyser = analyserNodesRef.current.get(peerId);
+      if (analyser) {
+        const source = audioContextRef.current.createMediaStreamSource(audio.srcObject);
+        source.connect(analyser);
+        analyser.connect(gainNode);
+        gainNode.connect(audioContextRef.current.destination);
       }
     }
   };
