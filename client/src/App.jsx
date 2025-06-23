@@ -814,7 +814,7 @@ const VolumeControl = React.memo(({
   // Используем состояние для мгновенного обновления иконки
   const [isVolumeOff, setIsVolumeOff] = useState(volume === 0);
 
-  // Синхронизируем с внешним состоянием
+  // Синхронизируем с внешним состоянием при его изменении
   useEffect(() => {
     setIsVolumeOff(volume === 0);
   }, [volume]);
@@ -822,7 +822,8 @@ const VolumeControl = React.memo(({
   const handleClick = (e) => {
     e.stopPropagation();
     // Обновляем локальное состояние немедленно
-    setIsVolumeOff(!isVolumeOff);
+    const newState = !isVolumeOff;
+    setIsVolumeOff(newState);
     if (onVolumeClick) {
       onVolumeClick();
     }
@@ -1826,12 +1827,15 @@ function App() {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     
-    // Даже если глобально звук выключен, мы все равно меняем индивидуальное состояние
-    const isIndividuallyMuted = individualMutedPeersRef.current.get(peerId) ?? false;
-    const newIsIndividuallyMuted = !isIndividuallyMuted;
-    const newVolume = newIsIndividuallyMuted ? 0 : 100;
+    // Получаем текущее состояние громкости
+    const currentVolume = volumes.get(peerId) || 100;
+    const newVolume = currentVolume === 0 ? 100 : 0;
     
-    console.log('Peer:', peerId, 'Current individual mute:', isIndividuallyMuted, 'New individual mute:', newIsIndividuallyMuted);
+    // Обновляем индивидуальное состояние мьюта
+    const newIsIndividuallyMuted = newVolume === 0;
+    individualMutedPeersRef.current.set(peerId, newIsIndividuallyMuted);
+    
+    console.log('Peer:', peerId, 'Current volume:', currentVolume, 'New volume:', newVolume);
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
@@ -1853,9 +1857,6 @@ function App() {
           console.log('Set gain to 0 and muted audio for peer:', peerId);
         }
       }
-
-      // Сохраняем новое индивидуальное состояние
-      individualMutedPeersRef.current.set(peerId, newIsIndividuallyMuted);
       
       // Обновляем UI состояние
       setVolumes(prev => {
