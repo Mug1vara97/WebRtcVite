@@ -869,48 +869,40 @@ const VideoOverlay = React.memo(({
       {!isLocal && (
         <IconButton
           onClick={handleVolumeIconClick}
-          className={`volumeControl ${
-            isVolumeOff
-              ? 'muted'
-              : isSpeaking
-              ? 'speaking'
-              : 'silent'
-          }`}
           sx={{
             position: 'absolute',
             bottom: 8,
             right: 8,
-            backgroundColor: 'rgba(0,0,0,0.5)',
+            backgroundColor: isVolumeOff 
+              ? 'rgba(237, 66, 69, 0.1)'
+              : 'rgba(0,0,0,0.5)',
             borderRadius: '50%',
             transition: 'all 0.2s ease',
             zIndex: 10,
+            animation: isVolumeOff ? 'mutePulse 2s infinite' : 'none',
             '&:hover': {
-              backgroundColor: 'rgba(0,0,0,0.7)',
+              backgroundColor: isVolumeOff 
+                ? 'rgba(237, 66, 69, 0.2)'
+                : 'rgba(0,0,0,0.7)',
               transform: 'scale(1.1)'
-            },
-            '&.muted': {
-              backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
-              animation: 'mutePulse 2s infinite !important',
-              '& .MuiSvgIcon-root': {
-                color: '#ed4245 !important'
-              }
-            },
-            '&.speaking': {
-              '& .MuiSvgIcon-root': {
-                color: '#3ba55c'
-              }
-            },
-            '&.silent': {
-              '& .MuiSvgIcon-root': {
-                color: '#B5BAC1'
-              }
             }
           }}
         >
           {isVolumeOff ? (
-            <VolumeOff sx={{ fontSize: 20 }} />
+            <VolumeOff sx={{ 
+              fontSize: 20, 
+              color: '#ed4245'
+            }} />
+          ) : isSpeaking ? (
+            <VolumeUp sx={{ 
+              fontSize: 20, 
+              color: '#3ba55c'
+            }} />
           ) : (
-            <VolumeUp sx={{ fontSize: 20 }} />
+            <VolumeUp sx={{ 
+              fontSize: 20, 
+              color: '#B5BAC1'
+            }} />
           )}
         </IconButton>
       )}
