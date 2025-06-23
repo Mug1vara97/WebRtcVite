@@ -1031,6 +1031,9 @@ function App() {
   // Добавляем новый ref для хранения состояний mute
   const mutedPeersRef = useRef(new Map());
 
+  // Добавляем новый ref для хранения состояний индивидуального mute
+  const individualMutedPeersRef = useRef(new Map());
+
   useEffect(() => {
     const resumeAudioContext = async () => {
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -1776,22 +1779,35 @@ function App() {
     };
   }, [socketRef.current]);
 
+  // Эффект для глобального управления звуком
+  useEffect(() => {
+    isAudioEnabledRef.current = isAudioEnabled;
+    
+    audioRef.current.forEach((audio, peerId) => {
+      const gainNode = gainNodesRef.current.get(peerId);
+      if (gainNode && audio) {
+        if (!isAudioEnabled) {
+          // При глобальном выключении просто мутим аудио элемент
+          audio.muted = true;
+        } else {
+          // При глобальном включении проверяем индивидуальное состояние
+          const isIndividuallyMuted = individualMutedPeersRef.current.get(peerId) ?? false;
+          audio.muted = isIndividuallyMuted;
+        }
+      }
+    });
+  }, [isAudioEnabled]);
+
   const handleVolumeChange = (peerId) => {
     console.log('Volume change requested for peer:', peerId);
     const gainNode = gainNodesRef.current.get(peerId);
     
-    // Если глобально звук выключен, не меняем состояние
-    if (!isAudioEnabled) {
-      console.log('Global audio is disabled, ignoring volume change request');
-      return;
-    }
+    // Даже если глобально звук выключен, мы все равно меняем индивидуальное состояние
+    const isIndividuallyMuted = individualMutedPeersRef.current.get(peerId) ?? false;
+    const newIsIndividuallyMuted = !isIndividuallyMuted;
+    const newVolume = newIsIndividuallyMuted ? 0 : 100;
     
-    // Получаем текущее состояние mute из volumes
-    const currentVolume = volumes.get(peerId) ?? 100;
-    const newVolume = currentVolume === 0 ? 100 : 0;
-    const newIsMuted = newVolume === 0;
-    
-    console.log('Peer:', peerId, 'Current volume:', currentVolume, 'New volume:', newVolume);
+    console.log('Peer:', peerId, 'Current individual mute:', isIndividuallyMuted, 'New individual mute:', newIsIndividuallyMuted);
     console.log('GainNode exists:', !!gainNode);
     
     if (gainNode) {
@@ -1800,21 +1816,24 @@ function App() {
       console.log('Audio element exists:', !!audio);
       
       if (audio) {
-        if (!newIsMuted) { // Размучиваем
-          // Устанавливаем значение gain в 1
+        if (!newIsIndividuallyMuted) {
+          // Размучиваем только если глобальный звук включен
+          if (isAudioEnabled) {
+            audio.muted = false;
+          }
           gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
-          audio.muted = false;
           console.log('Set gain to 1 and unmuted audio for peer:', peerId);
-        } else { // Мучиваем
-          // Устанавливаем значение gain в 0
+        } else {
           gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
           audio.muted = true;
           console.log('Set gain to 0 and muted audio for peer:', peerId);
         }
       }
 
-      // Сохраняем новое состояние mute в ref и volumes
-      mutedPeersRef.current.set(peerId, newIsMuted);
+      // Сохраняем новое индивидуальное состояние
+      individualMutedPeersRef.current.set(peerId, newIsIndividuallyMuted);
+      
+      // Обновляем UI состояние
       setVolumes(prev => {
         const newVolumes = new Map(prev);
         newVolumes.set(peerId, newVolume);
@@ -1823,44 +1842,10 @@ function App() {
     }
   };
 
-  // Обновляем эффект для отслеживания глобального состояния аудио
-  useEffect(() => {
-    isAudioEnabledRef.current = isAudioEnabled;
-    
-    // Если глобально выключили звук, мутим все аудио элементы
-    if (!isAudioEnabled) {
-      audioRef.current.forEach((audio, peerId) => {
-        const gainNode = gainNodesRef.current.get(peerId);
-        if (gainNode && audio) {
-          gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-          audio.muted = true;
-        }
-      });
-    } else {
-      // Если включили звук, восстанавливаем состояния в соответствии с volumes
-      audioRef.current.forEach((audio, peerId) => {
-        const gainNode = gainNodesRef.current.get(peerId);
-        const peerVolume = volumes.get(peerId) ?? 100;
-        
-        if (gainNode && audio) {
-          if (peerVolume > 0) {
-            gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
-            audio.muted = false;
-            mutedPeersRef.current.set(peerId, false);
-          } else {
-            gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-            audio.muted = true;
-            mutedPeersRef.current.set(peerId, true);
-          }
-        }
-      });
-    }
-  }, [isAudioEnabled, volumes]);
-
-  // Добавляем обработчик для инициализации состояния при подключении нового пира
+  // Обновляем обработчик подключения пира
   const handlePeerJoined = useCallback(({ peerId }) => {
-    // Устанавливаем начальное состояние - не замучен
-    mutedPeersRef.current.set(peerId, false);
+    // Инициализируем состояние - не замучен индивидуально
+    individualMutedPeersRef.current.set(peerId, false);
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.set(peerId, 100);
@@ -1868,9 +1853,9 @@ function App() {
     });
   }, []);
 
-  // Добавляем очистку при отключении пира
+  // Обновляем обработчик отключения пира
   const handlePeerLeft = useCallback(({ peerId }) => {
-    mutedPeersRef.current.delete(peerId);
+    individualMutedPeersRef.current.delete(peerId);
     setVolumes(prev => {
       const newVolumes = new Map(prev);
       newVolumes.delete(peerId);
