@@ -831,6 +831,8 @@ const VideoOverlay = React.memo(({
     }
   };
 
+  const volumeIconClass = isVolumeOff ? 'muted' : (isSpeaking ? 'speaking' : 'silent');
+
   return (
     <div style={{
       position: 'absolute',
@@ -844,7 +846,7 @@ const VideoOverlay = React.memo(({
       justifyContent: 'flex-end',
       padding: '12px',
       background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%)',
-      pointerEvents: 'none' // Делаем оверлей прозрачным для кликов
+      pointerEvents: 'none'
     }}>
       <Box sx={{
         display: 'flex',
@@ -858,7 +860,7 @@ const VideoOverlay = React.memo(({
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         width: 'fit-content',
         mb: 1,
-        pointerEvents: 'auto' // Возвращаем обработку кликов для элементов
+        pointerEvents: 'auto'
       }}>
         {isMuted ? (
           <MicOff sx={{ fontSize: 16, color: '#ed4245' }} />
@@ -876,32 +878,28 @@ const VideoOverlay = React.memo(({
       {!isLocal && (
         <IconButton
           onClick={handleVolumeIconClick}
-          className={`volumeControl ${
-            isVolumeOff
-              ? 'muted'
-              : isSpeaking
-              ? 'speaking'
-              : 'silent'
-          }`}
+          className={`volumeControl ${volumeIconClass}`}
           sx={{
             position: 'absolute',
             bottom: 8,
             right: 8,
-            backgroundColor: 'rgba(0,0,0,0.5)',
+            backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.1)' : 'rgba(0,0,0,0.5)',
             borderRadius: '50%',
             transition: 'all 0.2s ease',
             zIndex: 10,
-            pointerEvents: 'auto', // Возвращаем обработку кликов для кнопки
+            pointerEvents: 'auto',
             '&:hover': {
-              backgroundColor: 'rgba(0,0,0,0.7)',
+              backgroundColor: isVolumeOff ? 'rgba(237, 66, 69, 0.2)' : 'rgba(0,0,0,0.7)',
               transform: 'scale(1.1)'
             },
             '&.muted': {
               backgroundColor: 'rgba(237, 66, 69, 0.1) !important',
               animation: 'mutePulse 2s infinite !important',
+              '& .MuiSvgIcon-root': {
+                color: '#ed4245'
+              },
               '&:hover': {
-                backgroundColor: 'rgba(237, 66, 69, 0.2) !important',
-                transform: 'scale(1.1)'
+                backgroundColor: 'rgba(237, 66, 69, 0.2) !important'
               }
             },
             '&.speaking': {
