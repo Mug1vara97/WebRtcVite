@@ -421,7 +421,8 @@ const styles = {
   screenVideo: {
     width: '100%',
     height: '100%',
-    objectFit: 'contain'
+    objectFit: 'contain',
+    backgroundColor: '#000'
   },
   screenShareGrid: {
     display: 'grid',
@@ -483,7 +484,10 @@ const styles = {
     height: '100%',
     backgroundColor: '#202225',
     borderRadius: '8px',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    '& video': {
+      objectFit: 'contain'
+    }
   },
   screenShareUserName: {
     position: 'absolute',
@@ -520,12 +524,13 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000'
+    backgroundColor: '#000',
+    overflow: 'hidden'
   },
   fullscreenVideo: {
     width: '100%',
     height: '100%',
-    objectFit: 'cover',
+    objectFit: 'contain',
     backgroundColor: '#000'
   },
   fullscreenControls: {
