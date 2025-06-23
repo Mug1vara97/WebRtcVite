@@ -55,10 +55,10 @@ module.exports = {
                     mimeType: 'video/VP8',
                     clockRate: 90000,
                     parameters: {
-                        'x-google-start-bitrate': 1000,
-                        'x-google-min-bitrate': 500,
+                        'x-google-start-bitrate': 3000,
+                        'x-google-min-bitrate': 1000,
                         'x-google-max-bitrate': 5000,
-                        'x-google-max-quantization': 56,
+                        'x-google-max-quantization': 30,
                         'x-google-max-temporal-layers': 3
                     }
                 },
@@ -68,10 +68,10 @@ module.exports = {
                     clockRate: 90000,
                     parameters: {
                         'profile-id': 2,
-                        'x-google-start-bitrate': 1000,
-                        'x-google-min-bitrate': 500,
+                        'x-google-start-bitrate': 3000,
+                        'x-google-min-bitrate': 1000,
                         'x-google-max-bitrate': 5000,
-                        'x-google-max-quantization': 56,
+                        'x-google-max-quantization': 30,
                         'x-google-max-temporal-layers': 3
                     }
                 },
@@ -83,10 +83,10 @@ module.exports = {
                         'packetization-mode': 1,
                         'profile-level-id': '42e01f',
                         'level-asymmetry-allowed': 1,
-                        'x-google-start-bitrate': 1000,
-                        'x-google-min-bitrate': 500,
+                        'x-google-start-bitrate': 3000,
+                        'x-google-min-bitrate': 1000,
                         'x-google-max-bitrate': 5000,
-                        'x-google-max-quantization': 56
+                        'x-google-max-quantization': 30
                     }
                 }
             ]
@@ -101,12 +101,12 @@ module.exports = {
             enableUdp: true,
             enableTcp: true,
             preferUdp: true,
-            initialAvailableOutgoingBitrate: 1000000,
-            minimumAvailableOutgoingBitrate: 600000,
-            maxIncomingBitrate: 5000000,
-            defaultMaxIncomingBitrate: 4000000,
-            maxOutgoingBitrate: 5000000,
-            defaultMaxOutgoingBitrate: 4000000,
+            initialAvailableOutgoingBitrate: 3000000,
+            minimumAvailableOutgoingBitrate: 1000000,
+            maxIncomingBitrate: 10000000,
+            defaultMaxIncomingBitrate: 8000000,
+            maxOutgoingBitrate: 10000000,
+            defaultMaxOutgoingBitrate: 8000000,
             enableSctp: false,
             numStreams: { OS: 1, MIS: 1 },
             maxSctpMessageSize: 262144,

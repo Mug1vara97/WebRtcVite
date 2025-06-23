@@ -318,16 +318,20 @@ io.on('connection', async (socket) => {
                     kind,
                     rtpParameters,
                     appData,
-                    // Optimize encoding parameters for screen sharing
-                                    encodings: [
-                    { maxBitrate: 3000000, scaleResolutionDownBy: 1, maxFramerate: 60 }
-                ],
-                // Add codec preferences for better quality
-                codecOptions: {
-                    videoGoogleStartBitrate: 2000,
-                    videoGoogleMinBitrate: 1000,
-                    videoGoogleMaxBitrate: 6000
-                },
+                    // Optimize encoding parameters for Full HD screen sharing
+                    encodings: [
+                        {
+                            maxBitrate: 5000000, // 5 Mbps для Full HD
+                            scaleResolutionDownBy: 1, // Без уменьшения разрешения
+                            maxFramerate: 60
+                        }
+                    ],
+                    // Add codec preferences for better quality
+                    codecOptions: {
+                        videoGoogleStartBitrate: 3000,
+                        videoGoogleMinBitrate: 1000,
+                        videoGoogleMaxBitrate: 5000
+                    },
                     keyFrameRequestDelay: 2000
                 };
 
