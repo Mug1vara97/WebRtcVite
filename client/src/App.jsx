@@ -2101,11 +2101,8 @@ function App() {
         noiseSuppressionRef.current = new NoiseSuppressionManager();
       }
 
+      // Initialize will load WASM binaries and set up worklet modules
       await noiseSuppressionRef.current.initialize(stream);
-      console.log('Loading WASM binaries...');
-      await noiseSuppressionRef.current.loadWasmBinaries();
-      console.log('Loading worklet modules...');
-      await noiseSuppressionRef.current.loadWorkletModules(audioContextRef.current);
 
       // Get the processed stream for the producer
       const processedStream = noiseSuppressionRef.current.getProcessedStream();
