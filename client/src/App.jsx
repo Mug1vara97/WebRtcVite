@@ -1803,6 +1803,14 @@ function App() {
         if (socketRef.current) {
           socketRef.current.emit('muteState', { isMuted: newMuteState });
           
+          // Update producer track state
+          const producers = Array.from(producersRef.current.values());
+          const audioProducer = producers.find(p => p.track.kind === 'audio');
+          if (audioProducer) {
+            audioProducer.track.enabled = !newMuteState;
+            console.log('Updated audio producer track state:', !newMuteState);
+          }
+          
           if (setMuteState) {
             setMuteState(socketRef.current.id, newMuteState);
           }
@@ -2061,63 +2069,43 @@ function App() {
 
   const createLocalStream = async () => {
     try {
+      console.log('Creating local stream...');
       console.log('Requesting microphone access...');
-      
-      // Cleanup any existing stream and noise suppression first
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-        });
-        localStreamRef.current = null;
+
+      // Resume audio context if needed
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+        console.log('AudioContext state after resume:', audioContextRef.current.state);
       }
 
-      if (noiseSuppressionRef.current) {
-        noiseSuppressionRef.current.cleanup();
-        noiseSuppressionRef.current = null;
-      }
-
-      // Initialize audio context if needed
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 48000,
-          latencyHint: 'interactive'
-        });
-        console.log('Created new AudioContext:', audioContextRef.current);
-      }
-      
-      await audioContextRef.current.resume();
-      console.log('AudioContext state after resume:', audioContextRef.current.state);
-
-      // Get user media with detailed constraints
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 2,
-          sampleRate: 48000
+          sampleRate: 48000,
+          channelCount: 1
         }
       });
 
       console.log('Got media stream:', stream);
-      console.log('Audio track settings:', stream.getAudioTracks()[0].getSettings());
+      const audioTrack = stream.getAudioTracks()[0];
+      console.log('Audio track settings:', audioTrack.getSettings());
 
-      localStreamRef.current = stream;
-      
+      // Set initial track state based on mute state
+      audioTrack.enabled = !isMuted;
+      console.log('Set initial audio track enabled state:', !isMuted);
+
       // Initialize noise suppression
-      noiseSuppressionRef.current = new NoiseSuppressionManager();
-      
-      const initResult = await noiseSuppressionRef.current.initialize(stream);
-      if (!initResult) {
-        throw new Error('Failed to initialize noise suppression');
+      if (!noiseSuppressionRef.current) {
+        noiseSuppressionRef.current = new NoiseSuppressionManager();
       }
 
-      if (isNoiseSuppressed) {
-        const enableResult = await noiseSuppressionRef.current.enable(noiseSuppressionMode);
-        if (!enableResult) {
-          console.warn('Failed to enable noise suppression, continuing without it');
-        }
-      }
+      await noiseSuppressionRef.current.initialize(stream);
+      console.log('Loading WASM binaries...');
+      await noiseSuppressionRef.current.loadWasmBinaries();
+      console.log('Loading worklet modules...');
+      await noiseSuppressionRef.current.loadWorkletModules(audioContextRef.current);
 
       // Get the processed stream for the producer
       const processedStream = noiseSuppressionRef.current.getProcessedStream();
@@ -2131,8 +2119,9 @@ function App() {
       const settings = track.getSettings();
       console.log('Final audio track settings:', settings);
 
-      // Prevent local audio feedback
+      // Set initial track state based on mute state
       track.enabled = !isMuted;
+      console.log('Set initial processed track enabled state:', !isMuted);
       
       if (!producerTransportRef.current) {
         throw new Error('Producer transport not initialized');
@@ -2171,17 +2160,18 @@ function App() {
         noiseSuppressionRef.current.setProducer(producer);
       }
 
+      // Store the local stream reference
+      localStreamRef.current = processedStream;
+
       // Monitor producer state
       producer.on('transportclose', () => {
         console.log('Producer transport closed');
         producer.close();
-        producersRef.current.delete(producer.id);
       });
 
       producer.on('trackended', () => {
-        console.log('Local track ended');
+        console.log('Producer track ended');
         producer.close();
-        producersRef.current.delete(producer.id);
       });
 
       return producer;

@@ -102,32 +102,32 @@ io.on('connection', async (socket) => {
         }
     });
 
+    // Handle mute state changes
     socket.on('muteState', ({ isMuted }) => {
         const peer = peers.get(socket.id);
-        if (!peer || !socket.data?.roomId) return;
+        if (peer) {
+            // Update peer's mute state
+            peer.setMuted(isMuted);
+            
+            // Get the room
+            const room = rooms.get(peer.roomId);
+            if (room) {
+                // Broadcast to all peers in the room
+                room.io.to(room.id).emit('peerMuteStateChanged', {
+                    peerId: socket.id,
+                    isMuted
+                });
 
-        const room = rooms.get(socket.data.roomId);
-        if (!room) return;
+                // If peer is muted, ensure speaking state is false
+                if (isMuted) {
+                    room.io.to(room.id).emit('speakingStateChanged', {
+                        peerId: socket.id,
+                        speaking: false
+                    });
+                }
 
-        peer.setMuted(isMuted);
-        
-        // If muted, ensure speaking state is false
-        if (isMuted) {
-            peer.setSpeaking(false);
-        }
-
-        // Broadcast mute state to all peers in the room
-        socket.to(room.id).emit('peerMuteStateChanged', {
-            peerId: socket.id,
-            isMuted
-        });
-
-        // Also broadcast speaking state update if needed
-        if (isMuted) {
-            socket.to(room.id).emit('speakingStateChanged', {
-                peerId: socket.id,
-                speaking: false
-            });
+                console.log(`Peer ${socket.id} mute state changed:`, { isMuted });
+            }
         }
     });
 
