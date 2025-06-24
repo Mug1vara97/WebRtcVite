@@ -1277,6 +1277,7 @@ function App() {
     setIsAudioEnabled(true);
     isAudioEnabledRef.current = true;
     setUseEarpiece(true);
+    setIsMuted(false); // Reset mute state
     
     // Close all media streams
     if (localStreamRef.current) {
@@ -1414,6 +1415,7 @@ function App() {
       setIsAudioEnabled(true);
       isAudioEnabledRef.current = true;
       setUseEarpiece(true);
+      setIsMuted(false); // Reset mute state
 
       // Clean up old socket if exists
       if (socketRef.current) {
@@ -1495,7 +1497,7 @@ function App() {
         // Initialize volumes for the new peer
         setVolumes(prev => {
           const newVolumes = new Map(prev);
-          newVolumes.set(peerId, 100); // Default volume
+          newVolumes.set(peerId, isMuted ? 0 : 100); // Set volume based on mute state
           return newVolumes;
         });
 
@@ -1505,6 +1507,9 @@ function App() {
           newStates.set(peerId, false); // Initially not speaking
           return newStates;
         });
+
+        // Initialize individual mute state
+        individualMutedPeersRef.current.set(peerId, Boolean(isMuted));
       });
 
       socket.on('peerLeft', ({ peerId }) => {
@@ -1585,6 +1590,10 @@ function App() {
             console.log('Creating local stream...');
             await createLocalStream();
             console.log('Local stream created successfully');
+
+            // Send initial states to server
+            socket.emit('audioState', { isEnabled: true });
+            socket.emit('muteState', { isMuted: false });
 
             // Handle existing producers
             if (existingProducers && existingProducers.length > 0) {
@@ -1812,8 +1821,16 @@ function App() {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
         const newMuteState = !isMuted;
-        audioTrack.enabled = !newMuteState;
+        audioTrack.enabled = !newMuteState; // Инвертируем состояние трека
         setIsMuted(newMuteState);
+        
+        // Если есть обработанный поток, обновляем его трек тоже
+        if (noiseSuppressionRef.current) {
+          const processedTrack = noiseSuppressionRef.current.getProcessedStream().getAudioTracks()[0];
+          if (processedTrack) {
+            processedTrack.enabled = !newMuteState;
+          }
+        }
         
         console.log('Sending mute state to server:', newMuteState);
         if (socketRef.current) {
@@ -2115,8 +2132,8 @@ function App() {
       const settings = track.getSettings();
       console.log('Final audio track settings:', settings);
 
-      // Ensure track is enabled
-      track.enabled = true;
+      // Ensure track is enabled and not muted
+      track.enabled = true; // Always enable the track initially
       
       if (isNoiseSuppressed) {
         const enableResult = await noiseSuppressionRef.current.enable(noiseSuppressionMode);

@@ -154,31 +154,37 @@ io.on('connection', async (socket) => {
 
     socket.on('join', async ({ roomId, name }, callback) => {
         try {
-            const room = rooms.get(roomId);
+            // Create room if it doesn't exist
+            let room = rooms.get(roomId);
             if (!room) {
-                callback({ error: 'Room not found' });
-                return;
+                const worker = getMediasoupWorker();
+                room = await createRoom(roomId, worker);
+                rooms.set(roomId, room);
             }
 
+            // Create peer
             const peer = new Peer(socket, roomId, name);
+            peer.setMuted(false); // Ensure peer starts unmuted
+            peer.setAudioEnabled(true); // Ensure audio starts enabled
             peers.set(socket.id, peer);
             room.addPeer(peer);
 
-            // Store roomId in socket data
-            socket.data = { roomId };
-
-            // Join room
+            // Store room ID in socket data
+            socket.data.roomId = roomId;
             socket.join(roomId);
 
             // Get existing peers
-            const existingPeers = Array.from(room.getPeers().values())
-                .filter(p => p.id !== socket.id)
-                .map(p => ({
-                    id: p.id,
-                    name: p.name,
-                    isMuted: p.isMuted(),
-                    isAudioEnabled: Boolean(p.isAudioEnabled())
-                }));
+            const existingPeers = [];
+            room.peers.forEach((existingPeer) => {
+                if (existingPeer.id !== socket.id) {
+                    existingPeers.push({
+                        id: existingPeer.id,
+                        name: existingPeer.name,
+                        isMuted: existingPeer.isMuted(),
+                        isAudioEnabled: existingPeer.isAudioEnabled()
+                    });
+                }
+            });
 
             // Get existing producers
             const existingProducers = [];
@@ -319,19 +325,19 @@ io.on('connection', async (socket) => {
                     rtpParameters,
                     appData,
                     // Optimize encoding parameters for Full HD screen sharing
-                    encodings: [
+                                    encodings: [
                         {
                             maxBitrate: 5000000, // 5 Mbps для Full HD
                             scaleResolutionDownBy: 1, // Без уменьшения разрешения
                             maxFramerate: 60
                         }
-                    ],
-                    // Add codec preferences for better quality
-                    codecOptions: {
+                ],
+                // Add codec preferences for better quality
+                codecOptions: {
                         videoGoogleStartBitrate: 3000,
-                        videoGoogleMinBitrate: 1000,
+                    videoGoogleMinBitrate: 1000,
                         videoGoogleMaxBitrate: 5000
-                    },
+                },
                     keyFrameRequestDelay: 2000
                 };
 
