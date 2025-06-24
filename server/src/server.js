@@ -40,14 +40,10 @@ app.use(compression());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../../public')));
 
-// Maps to store mediasoup objects
-const workers = [];
 const rooms = new Map();
 const peers = new Map();
-const transports = new Map();
-const producers = new Map();
-const consumers = new Map();
 
+let workers = [];
 let nextWorkerIndex = 0;
 
 async function runMediasoupWorkers() {
@@ -106,32 +102,32 @@ io.on('connection', async (socket) => {
         }
     });
 
-    // Handle mute state changes
     socket.on('muteState', ({ isMuted }) => {
         const peer = peers.get(socket.id);
-        if (peer) {
-            // Update peer's mute state
-            peer.setMuted(isMuted);
-            
-            // Get the room
-            const room = rooms.get(peer.roomId);
-            if (room) {
-                // Broadcast to all peers in the room
-                room.io.to(room.id).emit('peerMuteStateChanged', {
-                    peerId: socket.id,
-                    isMuted
-                });
+        if (!peer || !socket.data?.roomId) return;
 
-                // If peer is muted, ensure speaking state is false
-                if (isMuted) {
-                    room.io.to(room.id).emit('speakingStateChanged', {
-                        peerId: socket.id,
-                        speaking: false
-                    });
-                }
+        const room = rooms.get(socket.data.roomId);
+        if (!room) return;
 
-                console.log(`Peer ${socket.id} mute state changed:`, { isMuted });
-            }
+        peer.setMuted(isMuted);
+        
+        // If muted, ensure speaking state is false
+        if (isMuted) {
+            peer.setSpeaking(false);
+        }
+
+        // Broadcast mute state to all peers in the room
+        socket.to(room.id).emit('peerMuteStateChanged', {
+            peerId: socket.id,
+            isMuted
+        });
+
+        // Also broadcast speaking state update if needed
+        if (isMuted) {
+            socket.to(room.id).emit('speakingStateChanged', {
+                peerId: socket.id,
+                speaking: false
+            });
         }
     });
 
@@ -204,17 +200,6 @@ io.on('connection', async (socket) => {
                 isAudioEnabled: Boolean(peer.isAudioEnabled())
             });
 
-            // Immediately broadcast initial states
-            socket.to(roomId).emit('peerMuteStateChanged', {
-                peerId: peer.id,
-                isMuted: peer.isMuted()
-            });
-
-            socket.to(roomId).emit('peerAudioStateChanged', {
-                peerId: peer.id,
-                isEnabled: Boolean(peer.isAudioEnabled())
-            });
-
             console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
             console.log('Existing peers:', existingPeers);
             console.log('Existing producers:', existingProducers);
@@ -232,23 +217,194 @@ io.on('connection', async (socket) => {
         }
     });
 
-    socket.on('produce', async ({ transportId, kind, rtpParameters, appData }, callback) => {
+    socket.on('createWebRtcTransport', async (callback) => {
         try {
-            const transport = transports.get(transportId);
-            if (!transport) {
-                throw new Error(`Transport with id "${transportId}" not found`);
+            if (!socket.data?.roomId) {
+                throw new Error('Not joined to any room');
             }
 
-            // Get peer and room
             const peer = peers.get(socket.id);
             if (!peer) {
                 throw new Error('Peer not found');
             }
 
-            const room = rooms.get(peer.roomId);
+            const room = rooms.get(socket.data.roomId);
             if (!room) {
                 throw new Error('Room not found');
             }
+
+            const transport = await room.createWebRtcTransport(config.mediasoup.webRtcTransport);
+            peer.addTransport(transport);
+
+            transport.on('routerclose', () => {
+                transport.close();
+                peer.removeTransport(transport.id);
+            });
+
+            callback({
+                id: transport.id,
+                iceParameters: transport.iceParameters,
+                iceCandidates: transport.iceCandidates,
+                dtlsParameters: transport.dtlsParameters,
+            });
+        } catch (error) {
+            console.error('Error in createWebRtcTransport:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    socket.on('connectTransport', async ({ transportId, dtlsParameters }, callback) => {
+        try {
+            if (!socket.data?.roomId) {
+                throw new Error('Not joined to any room');
+            }
+
+            const peer = peers.get(socket.id);
+            if (!peer) {
+                throw new Error('Peer not found');
+            }
+
+            const transport = peer.getTransport(transportId);
+            if (!transport) {
+                throw new Error('Transport not found');
+            }
+
+            await transport.connect({ dtlsParameters });
+            callback();
+        } catch (error) {
+            console.error('Error in connectTransport:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    socket.on('produce', async ({ transportId, kind, rtpParameters, appData }, callback) => {
+        try {
+            if (!socket.data?.roomId) {
+                throw new Error('Not joined to any room');
+            }
+
+            const peer = peers.get(socket.id);
+            if (!peer) {
+                throw new Error('Peer not found');
+            }
+
+            const room = rooms.get(socket.data.roomId);
+            if (!room) {
+                throw new Error('Room not found');
+            }
+
+            const transport = peer.getTransport(transportId);
+            if (!transport) {
+                throw new Error('Transport not found');
+            }
+
+            // Check if this is a screen sharing producer
+            if (appData?.mediaType === 'screen') {
+                // Only allow video for screen sharing
+                if (kind === 'audio') {
+                    console.log('Ignoring audio track for screen sharing');
+                    callback({ id: null });
+                    return;
+                }
+
+                // For video stream, check if peer is already sharing screen
+                if (kind === 'video' && room.isPeerSharingScreen(socket.id)) {
+                    throw new Error('Already sharing screen');
+                }
+                
+                console.log('Creating screen sharing producer:', { kind, appData });
+
+                const producerOptions = {
+                    kind,
+                    rtpParameters,
+                    appData,
+                    // Optimize encoding parameters for Full HD screen sharing
+                    encodings: [
+                        {
+                            maxBitrate: 5000000, // 5 Mbps для Full HD
+                            scaleResolutionDownBy: 1, // Без уменьшения разрешения
+                            maxFramerate: 60
+                        }
+                    ],
+                    // Add codec preferences for better quality
+                    codecOptions: {
+                        videoGoogleStartBitrate: 3000,
+                        videoGoogleMinBitrate: 1000,
+                        videoGoogleMaxBitrate: 5000
+                    },
+                    keyFrameRequestDelay: 2000
+                };
+
+                const producer = await transport.produce(producerOptions);
+
+                console.log('Screen sharing producer created:', { 
+                    id: producer.id, 
+                    kind: producer.kind, 
+                    appData: producer.appData 
+                });
+
+                peer.addProducer(producer);
+                room.addProducer(socket.id, producer);
+
+                producer.on('transportclose', () => {
+                    console.log('Screen sharing producer transport closed:', producer.id);
+                    producer.close();
+                    peer.removeProducer(producer.id);
+                    room.removeProducer(producer.id);
+                    
+                    // Notify peers about closed producer
+                    socket.to(room.id).emit('producerClosed', {
+                        producerId: producer.id,
+                        producerSocketId: socket.id
+                    });
+                });
+
+                producer.on('score', (score) => {
+                    // Monitor and adjust quality based on score
+                    const scores = Array.isArray(score) ? score : [score];
+                    const avgScore = scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
+                    
+                    socket.emit('producerScore', {
+                        producerId: producer.id,
+                        score: avgScore
+                    });
+
+                    // Adjust layers based on score
+                    if (avgScore < 5) {
+                        producer.setMaxSpatialLayer(0);
+                    } else if (avgScore < 7) {
+                        producer.setMaxSpatialLayer(1);
+                    } else {
+                        producer.setMaxSpatialLayer(2);
+                    }
+                });
+
+                // Notify other peers in the room about the new screen sharing producer
+                const otherPeers = Array.from(room.getPeers().values())
+                    .filter(p => p.id !== socket.id);
+
+                console.log('Notifying peers about new screen sharing producer:', {
+                    producerId: producer.id,
+                    producerSocketId: socket.id,
+                    kind: producer.kind,
+                    appData: producer.appData
+                });
+
+                for (const otherPeer of otherPeers) {
+                    otherPeer.socket.emit('newProducer', {
+                        producerId: producer.id,
+                        producerSocketId: socket.id,
+                        kind: producer.kind,
+                        appData: producer.appData
+                    });
+                }
+
+                callback({ id: producer.id });
+                return;
+            }
+
+            // Handle regular audio/video producers
+            console.log('Creating regular producer:', { kind, appData });
 
             let producerOptions = { 
                 kind, 
@@ -274,41 +430,113 @@ io.on('connection', async (socket) => {
                         opusCbr: true,
                         opusUseinbandfec: true,
                         opusMonoAudio: true
+                    },
+                    encodings: [
+                        {
+                            ssrc: Math.floor(Math.random() * 4294967296),
+                            dtx: true,
+                            maxBitrate: 64000,
+                            scalabilityMode: 'S1T1',
+                            numberOfChannels: 1
+                        }
+                    ],
+                    appData: {
+                        ...appData,
+                        audioProcessing: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            highpassFilter: true,
+                            typingNoiseDetection: true,
+                            monoAudio: true
+                        }
                     }
                 };
 
-                // Get peer and update mute state if this is an audio producer
-                if (appData.initialMuteState !== undefined) {
-                    peer.setMuted(appData.initialMuteState);
-                    console.log(`Set initial mute state for peer ${socket.id}:`, appData.initialMuteState);
+                // Modify RTP parameters for better audio quality
+                if (rtpParameters.codecs) {
+                    rtpParameters.codecs.forEach(codec => {
+                        if (codec.mimeType.toLowerCase() === 'audio/opus') {
+                            codec.parameters = {
+                                ...codec.parameters,
+                                maxaveragebitrate: 64000,
+                                maxplaybackrate: 48000,
+                                application: 'voip',
+                                useinbandfec: 1,
+                                'x-google-min-bitrate': 8,
+                                'x-google-max-bitrate': 64,
+                                'x-google-start-bitrate': 32,
+                                'x-google-echo-cancellation': 1,
+                                'x-google-noise-suppression': 1,
+                                'x-google-noise-suppression-level': 2,
+                                'x-google-auto-gain-control': 1,
+                                'x-google-experimental-echo-cancellation': 1,
+                                'x-google-experimental-noise-suppression': 1,
+                                'x-google-experimental-auto-gain-control': 1,
+                                'x-google-typing-noise-detection': 1,
+                                'x-google-conference-mode': 1,
+                                'x-google-hardware-echo-cancellation': 1,
+                                'x-google-highpass-filter': 1,
+                                'x-google-mono-audio': 1,
+                                channels: 1
+                            };
+                        }
+                    });
+                    producerOptions.rtpParameters = rtpParameters;
                 }
             }
 
             const producer = await transport.produce(producerOptions);
-            
-            // Store producer
-            producers.set(producer.id, producer);
+
+            console.log('Regular producer created:', { 
+                id: producer.id, 
+                kind: producer.kind, 
+                appData: producer.appData 
+            });
+
             peer.addProducer(producer);
             room.addProducer(socket.id, producer);
 
-            console.log('Producer created:', { 
-                id: producer.id, 
-                kind: producer.kind, 
-                peerId: socket.id 
-            });
-
-            // Monitor producer state
             producer.on('transportclose', () => {
-                console.log('Producer transport closed');
+                console.log('Producer transport closed:', producer.id);
                 producer.close();
-                producers.delete(producer.id);
                 peer.removeProducer(producer.id);
                 room.removeProducer(producer.id);
             });
 
+            producer.on('score', (score) => {
+                socket.emit('producerScore', {
+                    producerId: producer.id,
+                    score
+                });
+            });
+
+            // Add audio-specific event handlers
+            if (kind === 'audio') {
+                producer.on('audiolevelschange', (audioLevels) => {
+                    const level = audioLevels[0]?.level || 0;
+                    const isSpeaking = level > -50; // Adjust threshold as needed
+                    
+                    if (peer.isSpeaking() !== isSpeaking) {
+                        peer.setSpeaking(isSpeaking);
+                        socket.to(room.id).emit('speakingStateChanged', {
+                            peerId: socket.id,
+                            speaking: isSpeaking
+                        });
+                    }
+                });
+            }
+
             // Notify other peers in the room
             const otherPeers = Array.from(room.getPeers().values())
                 .filter(p => p.id !== socket.id);
+
+            console.log('Notifying peers about new producer:', {
+                producerId: producer.id,
+                producerSocketId: socket.id,
+                kind: producer.kind,
+                appData: producer.appData
+            });
 
             for (const otherPeer of otherPeers) {
                 otherPeer.socket.emit('newProducer', {
@@ -320,6 +548,7 @@ io.on('connection', async (socket) => {
             }
 
             callback({ id: producer.id });
+
         } catch (error) {
             console.error('Error in produce:', error);
             callback({ error: error.message });
@@ -616,68 +845,6 @@ io.on('connection', async (socket) => {
                 peerId: socket.id,
                 isEnabled
             });
-        }
-    });
-
-    // Handle transport creation
-    socket.on('createWebRtcTransport', async (data, callback) => {
-        try {
-            const { producing, consuming } = data;
-
-            const peer = peers.get(socket.id);
-            if (!peer) {
-                throw new Error('Peer not found');
-            }
-
-            const room = rooms.get(peer.roomId);
-            if (!room) {
-                throw new Error('Room not found');
-            }
-
-            const transport = await room.createWebRtcTransport({
-                producing,
-                consuming,
-                initialAvailableOutgoingBitrate: config.webRtcTransport.initialAvailableOutgoingBitrate
-            });
-
-            // Store transport
-            transports.set(transport.id, transport);
-            peer.addTransport(transport);
-
-            transport.on('routerclose', () => {
-                console.log('Transport router closed:', transport.id);
-                transport.close();
-                transports.delete(transport.id);
-                peer.removeTransport(transport.id);
-            });
-
-            callback({
-                id: transport.id,
-                iceParameters: transport.iceParameters,
-                iceCandidates: transport.iceCandidates,
-                dtlsParameters: transport.dtlsParameters,
-                sctpParameters: transport.sctpParameters
-            });
-        } catch (error) {
-            console.error('Error creating WebRTC transport:', error);
-            callback({ error: error.message });
-        }
-    });
-
-    // Handle transport connection
-    socket.on('connectTransport', async ({ transportId, dtlsParameters }, callback) => {
-        try {
-            const transport = transports.get(transportId);
-            if (!transport) {
-                throw new Error('Transport not found');
-            }
-
-            await transport.connect({ dtlsParameters });
-            console.log('Transport connected:', transportId);
-            callback();
-        } catch (error) {
-            console.error('Error connecting transport:', error);
-            callback({ error: error.message });
         }
     });
 
