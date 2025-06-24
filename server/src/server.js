@@ -40,10 +40,14 @@ app.use(compression());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../../public')));
 
+// Maps to store mediasoup objects
+const workers = [];
 const rooms = new Map();
 const peers = new Map();
+const transports = new Map();
+const producers = new Map();
+const consumers = new Map();
 
-let workers = [];
 let nextWorkerIndex = 0;
 
 async function runMediasoupWorkers() {
@@ -228,71 +232,22 @@ io.on('connection', async (socket) => {
         }
     });
 
-    socket.on('createWebRtcTransport', async (callback) => {
-        try {
-            if (!socket.data?.roomId) {
-                throw new Error('Not joined to any room');
-            }
-
-            const peer = peers.get(socket.id);
-            if (!peer) {
-                throw new Error('Peer not found');
-            }
-
-            const room = rooms.get(socket.data.roomId);
-            if (!room) {
-                throw new Error('Room not found');
-            }
-
-            const transport = await room.createWebRtcTransport(config.mediasoup.webRtcTransport);
-            peer.addTransport(transport);
-
-            transport.on('routerclose', () => {
-                transport.close();
-                peer.removeTransport(transport.id);
-            });
-
-            callback({
-                id: transport.id,
-                iceParameters: transport.iceParameters,
-                iceCandidates: transport.iceCandidates,
-                dtlsParameters: transport.dtlsParameters,
-            });
-        } catch (error) {
-            console.error('Error in createWebRtcTransport:', error);
-            callback({ error: error.message });
-        }
-    });
-
-    socket.on('connectTransport', async ({ transportId, dtlsParameters }, callback) => {
-        try {
-            if (!socket.data?.roomId) {
-                throw new Error('Not joined to any room');
-            }
-
-            const peer = peers.get(socket.id);
-            if (!peer) {
-                throw new Error('Peer not found');
-            }
-
-            const transport = peer.getTransport(transportId);
-            if (!transport) {
-                throw new Error('Transport not found');
-            }
-
-            await transport.connect({ dtlsParameters });
-            callback();
-        } catch (error) {
-            console.error('Error in connectTransport:', error);
-            callback({ error: error.message });
-        }
-    });
-
     socket.on('produce', async ({ transportId, kind, rtpParameters, appData }, callback) => {
         try {
             const transport = transports.get(transportId);
             if (!transport) {
                 throw new Error(`Transport with id "${transportId}" not found`);
+            }
+
+            // Get peer and room
+            const peer = peers.get(socket.id);
+            if (!peer) {
+                throw new Error('Peer not found');
+            }
+
+            const room = rooms.get(peer.roomId);
+            if (!room) {
+                throw new Error('Room not found');
             }
 
             let producerOptions = { 
@@ -319,32 +274,11 @@ io.on('connection', async (socket) => {
                         opusCbr: true,
                         opusUseinbandfec: true,
                         opusMonoAudio: true
-                    },
-                    encodings: [
-                        {
-                            ssrc: Math.floor(Math.random() * 4294967296),
-                            dtx: true,
-                            maxBitrate: 64000,
-                            scalabilityMode: 'S1T1',
-                            numberOfChannels: 1
-                        }
-                    ],
-                    appData: {
-                        ...appData,
-                        audioProcessing: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                            highpassFilter: true,
-                            typingNoiseDetection: true,
-                            monoAudio: true
-                        }
                     }
                 };
 
                 // Get peer and update mute state if this is an audio producer
-                const peer = peers.get(socket.id);
-                if (peer && appData.initialMuteState !== undefined) {
+                if (appData.initialMuteState !== undefined) {
                     peer.setMuted(appData.initialMuteState);
                     console.log(`Set initial mute state for peer ${socket.id}:`, appData.initialMuteState);
                 }
@@ -354,24 +288,36 @@ io.on('connection', async (socket) => {
             
             // Store producer
             producers.set(producer.id, producer);
+            peer.addProducer(producer);
+            room.addProducer(socket.id, producer);
 
-            // Add producer to peer
-            const peer = peers.get(socket.id);
-            if (peer) {
-                peer.addProducer(producer);
+            console.log('Producer created:', { 
+                id: producer.id, 
+                kind: producer.kind, 
+                peerId: socket.id 
+            });
 
-                // Get room
-                const room = rooms.get(peer.roomId);
-                if (room) {
-                    room.addProducer(socket.id, producer);
-                }
-            }
-
+            // Monitor producer state
             producer.on('transportclose', () => {
                 console.log('Producer transport closed');
                 producer.close();
                 producers.delete(producer.id);
+                peer.removeProducer(producer.id);
+                room.removeProducer(producer.id);
             });
+
+            // Notify other peers in the room
+            const otherPeers = Array.from(room.getPeers().values())
+                .filter(p => p.id !== socket.id);
+
+            for (const otherPeer of otherPeers) {
+                otherPeer.socket.emit('newProducer', {
+                    producerId: producer.id,
+                    producerSocketId: socket.id,
+                    kind: producer.kind,
+                    appData: producer.appData
+                });
+            }
 
             callback({ id: producer.id });
         } catch (error) {
@@ -670,6 +616,68 @@ io.on('connection', async (socket) => {
                 peerId: socket.id,
                 isEnabled
             });
+        }
+    });
+
+    // Handle transport creation
+    socket.on('createWebRtcTransport', async (data, callback) => {
+        try {
+            const { producing, consuming } = data;
+
+            const peer = peers.get(socket.id);
+            if (!peer) {
+                throw new Error('Peer not found');
+            }
+
+            const room = rooms.get(peer.roomId);
+            if (!room) {
+                throw new Error('Room not found');
+            }
+
+            const transport = await room.createWebRtcTransport({
+                producing,
+                consuming,
+                initialAvailableOutgoingBitrate: config.webRtcTransport.initialAvailableOutgoingBitrate
+            });
+
+            // Store transport
+            transports.set(transport.id, transport);
+            peer.addTransport(transport);
+
+            transport.on('routerclose', () => {
+                console.log('Transport router closed:', transport.id);
+                transport.close();
+                transports.delete(transport.id);
+                peer.removeTransport(transport.id);
+            });
+
+            callback({
+                id: transport.id,
+                iceParameters: transport.iceParameters,
+                iceCandidates: transport.iceCandidates,
+                dtlsParameters: transport.dtlsParameters,
+                sctpParameters: transport.sctpParameters
+            });
+        } catch (error) {
+            console.error('Error creating WebRTC transport:', error);
+            callback({ error: error.message });
+        }
+    });
+
+    // Handle transport connection
+    socket.on('connectTransport', async ({ transportId, dtlsParameters }, callback) => {
+        try {
+            const transport = transports.get(transportId);
+            if (!transport) {
+                throw new Error('Transport not found');
+            }
+
+            await transport.connect({ dtlsParameters });
+            console.log('Transport connected:', transportId);
+            callback();
+        } catch (error) {
+            console.error('Error connecting transport:', error);
+            callback({ error: error.message });
         }
     });
 
