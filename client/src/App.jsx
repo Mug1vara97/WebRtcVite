@@ -119,7 +119,19 @@ const styles = {
     height: '100vh',
     display: 'flex',
     flexDirection: 'column',
-    backgroundColor: '#1a1a1a'
+    backgroundColor: '#36393f',
+    color: '#dcddde',
+    '@keyframes pulse': {
+      '0%': {
+        boxShadow: '0 0 0 2px rgba(59, 165, 92, 0.8)'
+      },
+      '50%': {
+        boxShadow: '0 0 0 4px rgba(59, 165, 92, 0.4)'
+      },
+      '100%': {
+        boxShadow: '0 0 0 2px rgba(59, 165, 92, 0.8)'
+      }
+    }
   },
   appBar: {
     backgroundColor: '#36393f',
@@ -149,46 +161,48 @@ const styles = {
   },
   container: {
     flex: 1,
+    padding: '16px',
+    backgroundColor: '#36393f',
     display: 'flex',
     flexDirection: 'column',
-    padding: '16px',
-    maxWidth: '100% !important'
+    '@media (max-width: 600px)': {
+      padding: '8px',
+    }
   },
   videoGrid: {
-    flex: 1,
     display: 'grid',
-    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '8px',
+    padding: '16px',
     width: '100%',
-    height: '100%',
-    // Динамические стили будут применяться через className
-  },
-  videoGridTwo: {
-    gridTemplateColumns: '1fr 1fr',
-    '& > div': {
-      aspectRatio: '16/9',
-    }
-  },
-  videoGridFour: {
-    gridTemplateColumns: '1fr 1fr',
-    gridTemplateRows: '1fr 1fr',
-    '& > div': {
-      aspectRatio: '16/9',
-    }
-  },
-  videoGridNine: {
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gridTemplateRows: '1fr 1fr 1fr',
-    '& > div': {
-      aspectRatio: '16/9',
-    }
+    maxWidth: '1200px',
+    margin: '0 auto'
   },
   videoItem: {
-    position: 'relative',
-    backgroundColor: '#2a2a2a',
+    backgroundColor: '#2B2D31',
     borderRadius: '8px',
     overflow: 'hidden',
+    position: 'relative',
+    aspectRatio: '16/9',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    transition: 'box-shadow 0.3s ease-in-out',
     '&.speaking': {
-      border: '2px solid #3ba55c'
+      '&::after': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        border: '2px solid #3ba55c',
+        borderRadius: '8px',
+        animation: 'pulse 2s infinite',
+        pointerEvents: 'none',
+        zIndex: 1
+      }
     }
   },
   '@keyframes pulse': {
@@ -1027,65 +1041,6 @@ const VideoView = React.memo(({
   );
 });
 
-const UserPlaceholder = React.memo(({ 
-  name, 
-  isMuted, 
-  isSpeaking, 
-  isAudioEnabled, 
-  isLocal, 
-  onVolumeClick, 
-  volume, 
-  isAudioMuted 
-}) => {
-  return (
-    <div style={{ 
-      position: 'relative', 
-      width: '100%', 
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: '#2a2a2a'
-    }}>
-      <Box sx={{
-        width: '80px',
-        height: '80px',
-        borderRadius: '50%',
-        backgroundColor: '#3ba55c',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: '#fff',
-        fontSize: '32px',
-        fontWeight: 'bold',
-        marginBottom: '16px'
-      }}>
-        {name[0].toUpperCase()}
-      </Box>
-      <VideoOverlay
-        peerName={name}
-        isMuted={isMuted}
-        isSpeaking={isSpeaking}
-        isAudioEnabled={isAudioEnabled}
-        isLocal={isLocal}
-        onVolumeClick={onVolumeClick}
-        volume={volume}
-        isAudioMuted={isAudioMuted}
-      />
-    </div>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.name === nextProps.name &&
-    prevProps.isMuted === nextProps.isMuted &&
-    prevProps.isSpeaking === nextProps.isSpeaking &&
-    prevProps.isAudioEnabled === nextProps.isAudioEnabled &&
-    prevProps.volume === nextProps.volume &&
-    prevProps.isAudioMuted === nextProps.isAudioMuted
-  );
-});
-
 function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
@@ -1202,21 +1157,32 @@ function App() {
 
     // Обработчик закрытия producer
     socket.on('producerClosed', ({ producerId, producerSocketId, mediaType }) => {
-      console.log('Producer closed:', { producerId, producerSocketId, mediaType });
+      console.log('Producer closed event received:', { producerId, producerSocketId, mediaType });
       
       if (mediaType === 'screen') {
-        // Проверяем, не является ли это нашей локальной демонстрацией
-        if (!isLocalScreenShare(producerId)) {
-          setRemoteScreens(prev => {
-            const newScreens = new Map(prev);
-            const screenData = newScreens.get(producerSocketId);
-            if (screenData?.consumer) {
-              screenData.consumer.close();
+        console.log('Processing screen sharing producer closure');
+        setRemoteScreens(prev => {
+          const newScreens = new Map(prev);
+          const screenEntry = [...newScreens.entries()].find(
+            ([id, data]) => data.producerId === producerId
+          );
+          
+          if (screenEntry) {
+            const [peerId] = screenEntry;
+            if (peerId === producerSocketId) {
+              console.log('Removing screen from remoteScreens:', peerId);
+              // Останавливаем треки перед удалением
+              const stream = screenEntry[1].stream;
+              if (stream) {
+                stream.getTracks().forEach(track => {
+                  track.stop();
+                });
+              }
+              newScreens.delete(peerId);
             }
-            newScreens.delete(producerSocketId);
-            return newScreens;
-          });
-        }
+          }
+          return newScreens;
+        });
       } else if (mediaType === 'webcam') {
         console.log('Processing webcam producer closure');
         setRemoteVideos(prev => {
@@ -1657,39 +1623,6 @@ function App() {
 
   const handleExistingProducer = async (producer) => {
     try {
-      if (!deviceRef.current.loaded) {
-        console.error('Device not loaded');
-        return;
-      }
-
-      if (producer.appData?.mediaType === 'screen') {
-        console.log('Processing screen share stream:', { producer });
-        
-        setRemoteScreens(prev => {
-          const newScreens = new Map(prev);
-          newScreens.set(producer.producerSocketId, {
-            producerId: producer.producerId,
-            stream: new MediaStream()
-          });
-          return newScreens;
-        });
-
-        const consumer = await handleConsume(producer);
-        if (consumer) {
-          const stream = new MediaStream([consumer.track]);
-          
-          setRemoteScreens(prev => {
-            const newScreens = new Map(prev);
-            newScreens.set(producer.producerSocketId, {
-              producerId: producer.producerId,
-              stream,
-              consumer
-            });
-            return newScreens;
-          });
-        }
-      }
-
       console.log('Handling existing producer:', producer);
       
       // Skip if this is our own producer
@@ -3206,27 +3139,6 @@ function App() {
     }
   };
 
-  // Добавим функцию для определения класса сетки
-  const getGridClass = () => {
-    // Подсчитаем общее количество блоков (пиры + демонстрации экрана)
-    const totalPeers = peers.size + 1; // +1 для локального пользователя
-    const totalScreens = remoteScreens.size + (screenStream ? 1 : 0);
-    const totalBlocks = totalPeers + totalScreens;
-
-    if (totalBlocks <= 2) {
-      return styles.videoGridTwo;
-    } else if (totalBlocks <= 4) {
-      return styles.videoGridFour;
-    } else {
-      return styles.videoGridNine;
-    }
-  };
-
-  // Добавим функцию для проверки, является ли screenProducer локальным
-  const isLocalScreenShare = (producerId) => {
-    return screenProducer && screenProducer.id === producerId;
-  };
-
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -3287,10 +3199,7 @@ function App() {
           </Toolbar>
         </AppBar>
         <Container sx={styles.container}>
-          <Box sx={{
-            ...styles.videoGrid,
-            ...getGridClass()
-          }}>
+          <Box sx={styles.videoGrid}>
             {/* Only render video grid when not in fullscreen mode */}
             {fullscreenShare === null && (
               <>
@@ -3307,30 +3216,31 @@ function App() {
                       isAudioMuted={isMuted}
                     />
                   ) : (
-                    <UserPlaceholder 
-                      name={userName}
-                      isMuted={isMuted}
-                      isSpeaking={speakingStates.get(socketRef.current?.id)}
-                      isAudioEnabled={isAudioEnabled}
-                      isLocal={true}
-                      isAudioMuted={isMuted}
-                    />
+                    <div style={{ 
+                      position: 'relative', 
+                      width: '100%', 
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}>
+                      <Box sx={styles.userAvatar}>
+                        {userName[0].toUpperCase()}
+                      </Box>
+                      <VideoOverlay
+                        peerName={userName}
+                        isMuted={isMuted}
+                        isSpeaking={speakingStates.get(socketRef.current?.id)}
+                        isAudioEnabled={isAudioEnabled}
+                        isLocal={true}
+                        isAudioMuted={isMuted}
+                      />
+                    </div>
                   )}
                 </Box>
 
-                {/* Local screen share */}
-                {screenStream && (
-                  <Box sx={styles.videoItem}>
-                    <VideoView
-                      stream={screenStream}
-                      peerName={`${userName}'s screen`}
-                      isScreenShare={true}
-                      isLocal={true}
-                    />
-                  </Box>
-                )}
-
-                {/* Remote peers */}
+                {/* Remote users */}
                 {Array.from(peers.values()).map((peer) => (
                   <Box key={peer.id} sx={styles.videoItem} className={speakingStates.get(peer.id) ? 'speaking' : ''}>
                     {remoteVideos.get(peer.id)?.stream ? (
@@ -3346,38 +3256,32 @@ function App() {
                         isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
                       />
                     ) : (
-                      <UserPlaceholder
-                        name={peer.name}
-                        isMuted={peer.isMuted}
-                        isSpeaking={speakingStates.get(peer.id)}
-                        isAudioEnabled={audioStates.get(peer.id)}
-                        isLocal={false}
-                        onVolumeClick={() => handleVolumeChange(peer.id)}
-                        volume={volumes.get(peer.id) || 100}
-                        isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
-                      />
+                      <div style={{ 
+                        position: 'relative', 
+                        width: '100%', 
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Box sx={styles.userAvatar}>
+                          {peer.name[0].toUpperCase()}
+                        </Box>
+                        <VideoOverlay
+                          peerName={peer.name}
+                          isMuted={peer.isMuted}
+                          isSpeaking={speakingStates.get(peer.id)}
+                          isAudioEnabled={audioStates.get(peer.id)}
+                          isLocal={false}
+                          onVolumeClick={() => handleVolumeChange(peer.id)}
+                          volume={volumes.get(peer.id) || 100}
+                          isAudioMuted={individualMutedPeersRef.current.get(peer.id) || false}
+                        />
+                      </div>
                     )}
                   </Box>
                 ))}
-
-                {/* Remote screen shares */}
-                {Array.from(remoteScreens.entries()).map(([peerId, { stream, producerId }]) => {
-                  // Пропускаем локальную демонстрацию экрана, так как она уже отображается выше
-                  if (isLocalScreenShare(producerId)) {
-                    return null;
-                  }
-                  const peer = peers.get(peerId);
-                  return (
-                    <Box key={`screen-${peerId}`} sx={styles.videoItem}>
-                      <VideoView
-                        stream={stream}
-                        peerName={`${peer?.name || 'User'}'s screen`}
-                        isScreenShare={true}
-                        isLocal={false}
-                      />
-                    </Box>
-                  );
-                })}
               </>
             )}
 
