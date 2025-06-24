@@ -1092,6 +1092,7 @@ function App() {
   const individualMutedPeersRef = useRef(new Map());
 
   const [fullscreenShare, setFullscreenShare] = useState(null);
+  const [screenAudioProducer, setScreenAudioProducer] = useState(null);
 
   useEffect(() => {
     const resumeAudioContext = async () => {
@@ -1273,39 +1274,12 @@ function App() {
   }, [socketRef.current]);
 
   const cleanup = () => {
-    // Reset states to enabled
-    setIsAudioEnabled(true);
-    isAudioEnabledRef.current = true;
-    setUseEarpiece(true);
-    setIsMuted(false); // Reset mute state
-    
-    // Close all media streams
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-    
     try {
-      // Stop screen sharing if active
-      if (screenProducer) {
-        screenProducer.close();
-        setScreenProducer(null);
-      }
-      
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-        setScreenStream(null);
-      }
-
-      setIsScreenSharing(false);
-      setRemoteScreens(new Map());
-
       // Cleanup voice detection workers
       audioRef.current.forEach((peerAudio, peerId) => {
         if (peerAudio instanceof Map && peerAudio.has('voiceDetector')) {
           const voiceDetector = peerAudio.get('voiceDetector');
           if (voiceDetector) {
-            voiceDetector.port.close();
             voiceDetector.disconnect();
           }
         }
@@ -1367,40 +1341,49 @@ function App() {
         localStreamRef.current = null;
       }
 
-      // Cleanup audio elements
-      audioRef.current.forEach(audio => {
+      // Cleanup screen stream
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        setScreenStream(null);
+      }
+
+      // Close screen producers
+      if (screenProducer) {
+        screenProducer.close();
+        setScreenProducer(null);
+      }
+
+      if (screenAudioProducer) {
+        screenAudioProducer.close();
+        setScreenAudioProducer(null);
+      }
+
+      // Cleanup audio elements and gain nodes
+      audioRef.current.forEach((audio, key) => {
         if (audio instanceof HTMLAudioElement) {
           audio.pause();
           audio.srcObject = null;
           audio.remove();
         }
-      });
-      audioRef.current.clear();
-
-      // Cleanup gain nodes
-      gainNodesRef.current.forEach(node => {
-        if (node) {
-          node.disconnect();
+        // Cleanup gain nodes
+        const gainNode = gainNodesRef.current.get(key);
+        if (gainNode) {
+          gainNode.disconnect();
         }
       });
+      audioRef.current.clear();
       gainNodesRef.current.clear();
 
-      // Close audio context
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close();
-      }
-      audioContextRef.current = null;
-
-      deviceRef.current = null;
-      
-      // Cleanup noise suppression
-      if (noiseSuppressionRef.current) {
-        noiseSuppressionRef.current.cleanup();
-        noiseSuppressionRef.current = null;
-      }
-
+      setIsScreenSharing(false);
+      setIsConnected(false);
+      setIsJoined(false);
+      setRemoteScreens(new Map());
+      setRemoteVideos(new Map());
+      setVolumes(new Map());
+      setSpeakingStates(new Map());
+      setAudioStates(new Map());
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('Error in cleanup:', error);
     }
   };
 
@@ -2337,60 +2320,51 @@ function App() {
   };
 
   const startScreenSharing = async () => {
+    console.log('Starting screen sharing...');
+
     try {
       if (!producerTransportRef.current) {
         throw new Error('Transport not ready');
       }
 
-      // Stop any existing screen sharing first
-      if (isScreenSharing) {
-        await stopScreenSharing();
-      }
-
-      console.log('Requesting screen sharing access...');
+      // Request screen capture with audio
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          cursor: 'always',
-          frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920, max: 1920 },
           height: { ideal: 1080, max: 1080 },
-          aspectRatio: 16/9,
-          displaySurface: 'monitor',
-          resizeMode: 'crop-and-scale'
+          frameRate: { ideal: 60, max: 60 }
         },
-        audio: false
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
       });
 
-      console.log('Screen sharing access granted');
+      setScreenStream(screenStream);
 
-      // Handle stream stop
+      // Handle screen sharing stop event
       screenStream.getVideoTracks()[0].onended = () => {
         console.log('Screen sharing stopped by user');
         stopScreenSharing();
       };
 
-      // Set stream first
-      setScreenStream(screenStream);
-
       const videoTrack = screenStream.getVideoTracks()[0];
+      const audioTrack = screenStream.getAudioTracks()[0];
+
       if (!videoTrack) {
         throw new Error('No video track available');
       }
 
-      console.log('Creating screen sharing producer...');
+      // Create video producer
       const videoProducer = await producerTransportRef.current.produce({
         track: videoTrack,
         encodings: [
-          {
-            // Используем полное разрешение 1080p
-            scaleResolutionDownBy: 1,
-            maxBitrate: 5000000, // 5 Mbps для Full HD
-            maxFramerate: 60
-          }
+          { maxBitrate: 5000000, scaleResolutionDownBy: 1, maxFramerate: 60 }
         ],
         codecOptions: {
-          videoGoogleStartBitrate: 3000, // Начальный битрейт 3 Mbps
-          videoGoogleMaxBitrate: 5000 // Максимальный битрейт 5 Mbps
+          videoGoogleStartBitrate: 3000,
+          videoGoogleMaxBitrate: 5000
         },
         appData: {
           mediaType: 'screen',
@@ -2399,6 +2373,32 @@ function App() {
           frameRate: videoTrack.getSettings().frameRate
         }
       });
+
+      // If audio track is available, create audio producer
+      if (audioTrack) {
+        const audioProducer = await producerTransportRef.current.produce({
+          track: audioTrack,
+          appData: {
+            mediaType: 'screen-audio'
+          }
+        });
+
+        console.log('Screen audio producer created:', audioProducer.id);
+
+        // Handle audio producer events
+        audioProducer.on('transportclose', () => {
+          console.log('Screen audio transport closed');
+          audioProducer.close();
+        });
+
+        audioProducer.on('trackended', () => {
+          console.log('Screen audio track ended');
+          audioProducer.close();
+        });
+
+        // Store audio producer reference
+        setScreenAudioProducer(audioProducer);
+      }
 
       console.log('Screen sharing producer created:', videoProducer.id);
 
@@ -2434,14 +2434,23 @@ function App() {
     console.log('Stopping screen sharing...');
 
     try {
-      // Сначала уведомляем сервер для обработки удаления на удаленной стороне
+      // Notify server to handle remote side cleanup
       if (screenProducer && socketRef.current) {
         socketRef.current.emit('stopScreenSharing', {
           producerId: screenProducer.id
         });
       }
 
-      // Удаляем только свой локальный экран
+      // Stop screen audio producer if exists
+      if (screenAudioProducer) {
+        socketRef.current.emit('stopScreenSharing', {
+          producerId: screenAudioProducer.id
+        });
+        screenAudioProducer.close();
+        setScreenAudioProducer(null);
+      }
+
+      // Remove only local screen
       setRemoteScreens(prev => {
         const newScreens = new Map(prev);
         if (socketRef.current) {
@@ -2450,13 +2459,13 @@ function App() {
         return newScreens;
       });
 
-      // Закрываем producer
+      // Close video producer
       if (screenProducer) {
         screenProducer.close();
         setScreenProducer(null);
       }
 
-      // Останавливаем все треки в потоке экрана
+      // Stop all tracks in screen stream
       if (screenStream) {
         const tracks = screenStream.getTracks();
         tracks.forEach(track => {
@@ -2469,8 +2478,9 @@ function App() {
       setIsScreenSharing(false);
     } catch (error) {
       console.error('Error stopping screen share:', error);
-      // Принудительная очистка даже при ошибке
+      // Force cleanup even on error
       setScreenProducer(null);
+      setScreenAudioProducer(null);
       setScreenStream(null);
       setIsScreenSharing(false);
     }
@@ -2925,37 +2935,20 @@ function App() {
 
   const handleConsume = async (producer) => {
     try {
-      console.log('Handling producer:', producer);
-      
-      if (producer.producerSocketId === socketRef.current.id) {
-        console.log('Skipping own producer');
-        return;
-      }
-      
-      const transport = await createConsumerTransport();
-      console.log('Consumer transport created:', transport.id);
-      
-      const { rtpCapabilities } = deviceRef.current;
-      
-      const { id, producerId, kind, rtpParameters, appData } = await new Promise((resolve, reject) => {
-        socketRef.current.emit('consume', {
-          rtpCapabilities,
-          remoteProducerId: producer.producerId,
-          transportId: transport.id
-        }, (response) => {
-          if (response.error) {
-            console.error('Consume request failed:', response.error);
-            reject(new Error(response.error));
-            return;
-          }
-          resolve(response);
-        });
-      });
+      const { id, producerId, kind, rtpParameters, appData } = producer;
 
       if (!id || !producerId || !kind || !rtpParameters) {
         throw new Error('Invalid consumer data received from server');
       }
 
+      // Get appropriate transport
+      const transport = consumerTransportsRef.current.get(producer.producerSocketId);
+      if (!transport) {
+        console.error('No consumer transport found for producer:', producer.producerSocketId);
+        return;
+      }
+
+      // Create consumer
       const consumer = await transport.consume({
         id,
         producerId,
@@ -2967,8 +2960,10 @@ function App() {
       console.log('Consumer created:', consumer.id);
       consumersRef.current.set(consumer.id, consumer);
 
+      // Create MediaStream from consumer's track
       const stream = new MediaStream([consumer.track]);
 
+      // Handle based on kind and appData
       if (appData?.mediaType === 'screen') {
         console.log('Processing screen sharing stream:', { kind, appData });
         
@@ -2983,6 +2978,30 @@ function App() {
             });
             return newScreens;
           });
+        }
+      } else if (appData?.mediaType === 'screen-audio') {
+        console.log('Processing screen audio stream');
+        try {
+          const audio = new Audio();
+          audio.srcObject = stream;
+          audio.id = `screen-audio-${producer.producerSocketId}`;
+          audio.autoplay = true;
+
+          // Don't apply voice processing to screen audio
+          const audioContext = audioContextRef.current;
+          const source = audioContext.createMediaStreamSource(stream);
+          const gainNode = audioContext.createGain();
+          gainNode.gain.value = isAudioEnabledRef.current ? 1.0 : 0.0;
+
+          source.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+
+          // Store references for screen audio
+          gainNodesRef.current.set(`screen-${producer.producerSocketId}`, gainNode);
+          audioRef.current.set(`screen-${producer.producerSocketId}`, audio);
+          setVolumes(prev => new Map(prev).set(`screen-${producer.producerSocketId}`, 100));
+        } catch (error) {
+          console.error('Error setting up screen audio:', error);
         }
       } else if (appData?.mediaType === 'webcam') {
         console.log('Processing webcam stream:', { kind, appData });
@@ -3000,12 +3019,13 @@ function App() {
           });
         }
       } else if (kind === 'audio') {
+        // Handle regular audio streams
         try {
           const audio = new Audio();
           audio.srcObject = stream;
           audio.id = `audio-${producer.producerSocketId}`;
           audio.autoplay = true;
-          audio.muted = !isAudioEnabledRef.current; // Use ref for current state
+          audio.muted = !isAudioEnabledRef.current;
 
           if (isMobile) {
             await setAudioOutput(audio, useEarpiece);
@@ -3017,7 +3037,7 @@ function App() {
           const analyser = createAudioAnalyser(audioContext);
           
           const gainNode = audioContext.createGain();
-          gainNode.gain.value = isAudioEnabledRef.current ? 1.0 : 0.0; // Use ref for current state
+          gainNode.gain.value = isAudioEnabledRef.current ? 1.0 : 0.0;
 
           source.connect(analyser);
           analyser.connect(gainNode);
@@ -3028,12 +3048,29 @@ function App() {
           audioRef.current.set(producer.producerSocketId, audio);
           setVolumes(prev => new Map(prev).set(producer.producerSocketId, 100));
 
-          // Start voice detection with producerId
           detectSpeaking(analyser, producer.producerSocketId, producer.producerId);
         } catch (error) {
           console.error('Error setting up audio:', error);
         }
       }
+
+      // Resume the consumer
+      await new Promise((resolve, reject) => {
+        socketRef.current.emit('resumeConsumer', { consumerId: consumer.id }, async (error) => {
+          if (error) {
+            console.error('Resume consumer failed:', error);
+            reject(new Error(error));
+            return;
+          }
+          try {
+            await consumer.resume();
+            resolve();
+          } catch (error) {
+            console.error('Error resuming consumer:', error);
+            reject(error);
+          }
+        });
+      });
 
       consumer.on('transportclose', () => {
         console.log('Consumer transport closed');
@@ -3053,10 +3090,8 @@ function App() {
         consumersRef.current.delete(consumer.id);
       });
 
-      return consumer;
     } catch (error) {
-      console.error('Error consuming producer:', error);
-      throw error;
+      console.error('Error in handleConsume:', error);
     }
   };
 

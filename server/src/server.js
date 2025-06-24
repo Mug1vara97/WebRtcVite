@@ -304,17 +304,10 @@ io.on('connection', async (socket) => {
                 throw new Error('Transport not found');
             }
 
-            // Check if this is a screen sharing producer
-            if (appData?.mediaType === 'screen') {
-                // Only allow video for screen sharing
-                if (kind === 'audio') {
-                    console.log('Ignoring audio track for screen sharing');
-                    callback({ id: null });
-                    return;
-                }
-
+            // Handle screen sharing producers
+            if (appData?.mediaType === 'screen' || appData?.mediaType === 'screen-audio') {
                 // For video stream, check if peer is already sharing screen
-                if (kind === 'video' && room.isPeerSharingScreen(socket.id)) {
+                if (kind === 'video' && appData.mediaType === 'screen' && room.isPeerSharingScreen(socket.id)) {
                     throw new Error('Already sharing screen');
                 }
                 
@@ -323,23 +316,35 @@ io.on('connection', async (socket) => {
                 const producerOptions = {
                     kind,
                     rtpParameters,
-                    appData,
-                    // Optimize encoding parameters for Full HD screen sharing
-                                    encodings: [
+                    appData
+                };
+
+                // Optimize video settings for screen sharing
+                if (kind === 'video') {
+                    producerOptions.encodings = [
                         {
                             maxBitrate: 5000000, // 5 Mbps для Full HD
                             scaleResolutionDownBy: 1, // Без уменьшения разрешения
                             maxFramerate: 60
                         }
-                ],
-                // Add codec preferences for better quality
-                codecOptions: {
+                    ];
+                    producerOptions.codecOptions = {
                         videoGoogleStartBitrate: 3000,
-                    videoGoogleMinBitrate: 1000,
+                        videoGoogleMinBitrate: 1000,
                         videoGoogleMaxBitrate: 5000
-                },
-                    keyFrameRequestDelay: 2000
-                };
+                    };
+                    producerOptions.keyFrameRequestDelay = 2000;
+                }
+
+                // Optimize audio settings for screen sharing
+                if (kind === 'audio' && appData.mediaType === 'screen-audio') {
+                    producerOptions.codecOptions = {
+                        opusStereo: true,
+                        opusDtx: true,
+                        opusFec: true,
+                        opusMaxPlaybackRate: 48000
+                    };
+                }
 
                 const producer = await transport.produce(producerOptions);
 
@@ -365,139 +370,21 @@ io.on('connection', async (socket) => {
                     });
                 });
 
-                producer.on('score', (score) => {
-                    // Monitor and adjust quality based on score
-                    const scores = Array.isArray(score) ? score : [score];
-                    const avgScore = scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
-                    
-                    socket.emit('producerScore', {
-                        producerId: producer.id,
-                        score: avgScore
-                    });
-
-                    // Adjust layers based on score
-                    if (avgScore < 5) {
-                        producer.setMaxSpatialLayer(0);
-                    } else if (avgScore < 7) {
-                        producer.setMaxSpatialLayer(1);
-                    } else {
-                        producer.setMaxSpatialLayer(2);
-                    }
-                });
-
-                // Notify other peers in the room about the new screen sharing producer
-                const otherPeers = Array.from(room.getPeers().values())
-                    .filter(p => p.id !== socket.id);
-
-                console.log('Notifying peers about new screen sharing producer:', {
-                    producerId: producer.id,
-                    producerSocketId: socket.id,
-                    kind: producer.kind,
-                    appData: producer.appData
-                });
-
-                for (const otherPeer of otherPeers) {
-                    otherPeer.socket.emit('newProducer', {
-                        producerId: producer.id,
-                        producerSocketId: socket.id,
-                        kind: producer.kind,
-                        appData: producer.appData
-                    });
-                }
-
                 callback({ id: producer.id });
                 return;
             }
 
-            // Handle regular audio/video producers
-            console.log('Creating regular producer:', { kind, appData });
-
-            let producerOptions = { 
-                kind, 
+            // Handle regular media producers
+            const producer = await transport.produce({
+                kind,
                 rtpParameters,
                 appData
-            };
+            });
 
-            // Add specific settings for audio producers
-            if (kind === 'audio') {
-                producerOptions = {
-                    ...producerOptions,
-                    codecOptions: {
-                        opusStereo: false,
-                        opusDtx: true,
-                        opusFec: true,
-                        opusNack: true,
-                        channelsCount: 1,
-                        sampleRate: 48000,
-                        opusMaxAverageBitrate: 64000,
-                        opusMaxPlaybackRate: 48000,
-                        opusPtime: 20,
-                        opusApplication: 'voip',
-                        opusCbr: true,
-                        opusUseinbandfec: true,
-                        opusMonoAudio: true
-                    },
-                    encodings: [
-                        {
-                            ssrc: Math.floor(Math.random() * 4294967296),
-                            dtx: true,
-                            maxBitrate: 64000,
-                            scalabilityMode: 'S1T1',
-                            numberOfChannels: 1
-                        }
-                    ],
-                    appData: {
-                        ...appData,
-                        audioProcessing: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                            highpassFilter: true,
-                            typingNoiseDetection: true,
-                            monoAudio: true
-                        }
-                    }
-                };
-
-                // Modify RTP parameters for better audio quality
-                if (rtpParameters.codecs) {
-                    rtpParameters.codecs.forEach(codec => {
-                        if (codec.mimeType.toLowerCase() === 'audio/opus') {
-                            codec.parameters = {
-                                ...codec.parameters,
-                                maxaveragebitrate: 64000,
-                                maxplaybackrate: 48000,
-                                application: 'voip',
-                                useinbandfec: 1,
-                                'x-google-min-bitrate': 8,
-                                'x-google-max-bitrate': 64,
-                                'x-google-start-bitrate': 32,
-                                'x-google-echo-cancellation': 1,
-                                'x-google-noise-suppression': 1,
-                                'x-google-noise-suppression-level': 2,
-                                'x-google-auto-gain-control': 1,
-                                'x-google-experimental-echo-cancellation': 1,
-                                'x-google-experimental-noise-suppression': 1,
-                                'x-google-experimental-auto-gain-control': 1,
-                                'x-google-typing-noise-detection': 1,
-                                'x-google-conference-mode': 1,
-                                'x-google-hardware-echo-cancellation': 1,
-                                'x-google-highpass-filter': 1,
-                                'x-google-mono-audio': 1,
-                                channels: 1
-                            };
-                        }
-                    });
-                    producerOptions.rtpParameters = rtpParameters;
-                }
-            }
-
-            const producer = await transport.produce(producerOptions);
-
-            console.log('Regular producer created:', { 
-                id: producer.id, 
-                kind: producer.kind, 
-                appData: producer.appData 
+            console.log('Regular producer created:', {
+                id: producer.id,
+                kind: producer.kind,
+                appData: producer.appData
             });
 
             peer.addProducer(producer);
@@ -508,53 +395,14 @@ io.on('connection', async (socket) => {
                 producer.close();
                 peer.removeProducer(producer.id);
                 room.removeProducer(producer.id);
-            });
-
-            producer.on('score', (score) => {
-                socket.emit('producerScore', {
+                
+                socket.to(room.id).emit('producerClosed', {
                     producerId: producer.id,
-                    score
+                    producerSocketId: socket.id
                 });
             });
-
-            // Add audio-specific event handlers
-            if (kind === 'audio') {
-                producer.on('audiolevelschange', (audioLevels) => {
-                    const level = audioLevels[0]?.level || 0;
-                    const isSpeaking = level > -50; // Adjust threshold as needed
-                    
-                    if (peer.isSpeaking() !== isSpeaking) {
-                        peer.setSpeaking(isSpeaking);
-                        socket.to(room.id).emit('speakingStateChanged', {
-                            peerId: socket.id,
-                            speaking: isSpeaking
-                        });
-                    }
-                });
-            }
-
-            // Notify other peers in the room
-            const otherPeers = Array.from(room.getPeers().values())
-                .filter(p => p.id !== socket.id);
-
-            console.log('Notifying peers about new producer:', {
-                producerId: producer.id,
-                producerSocketId: socket.id,
-                kind: producer.kind,
-                appData: producer.appData
-            });
-
-            for (const otherPeer of otherPeers) {
-                otherPeer.socket.emit('newProducer', {
-                    producerId: producer.id,
-                    producerSocketId: socket.id,
-                    kind: producer.kind,
-                    appData: producer.appData
-                });
-            }
 
             callback({ id: producer.id });
-
         } catch (error) {
             console.error('Error in produce:', error);
             callback({ error: error.message });
