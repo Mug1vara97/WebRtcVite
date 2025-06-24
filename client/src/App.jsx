@@ -1202,32 +1202,21 @@ function App() {
 
     // Обработчик закрытия producer
     socket.on('producerClosed', ({ producerId, producerSocketId, mediaType }) => {
-      console.log('Producer closed event received:', { producerId, producerSocketId, mediaType });
+      console.log('Producer closed:', { producerId, producerSocketId, mediaType });
       
       if (mediaType === 'screen') {
-        console.log('Processing screen sharing producer closure');
-        setRemoteScreens(prev => {
-          const newScreens = new Map(prev);
-          const screenEntry = [...newScreens.entries()].find(
-            ([id, data]) => data.producerId === producerId
-          );
-          
-          if (screenEntry) {
-            const [peerId] = screenEntry;
-            if (peerId === producerSocketId) {
-              console.log('Removing screen from remoteScreens:', peerId);
-              // Останавливаем треки перед удалением
-              const stream = screenEntry[1].stream;
-              if (stream) {
-                stream.getTracks().forEach(track => {
-                  track.stop();
-                });
-              }
-              newScreens.delete(peerId);
+        // Проверяем, не является ли это нашей локальной демонстрацией
+        if (!isLocalScreenShare(producerId)) {
+          setRemoteScreens(prev => {
+            const newScreens = new Map(prev);
+            const screenData = newScreens.get(producerSocketId);
+            if (screenData?.consumer) {
+              screenData.consumer.close();
             }
-          }
-          return newScreens;
-        });
+            newScreens.delete(producerSocketId);
+            return newScreens;
+          });
+        }
       } else if (mediaType === 'webcam') {
         console.log('Processing webcam producer closure');
         setRemoteVideos(prev => {
@@ -1668,6 +1657,39 @@ function App() {
 
   const handleExistingProducer = async (producer) => {
     try {
+      if (!deviceRef.current.loaded) {
+        console.error('Device not loaded');
+        return;
+      }
+
+      if (producer.appData?.mediaType === 'screen') {
+        console.log('Processing screen share stream:', { producer });
+        
+        setRemoteScreens(prev => {
+          const newScreens = new Map(prev);
+          newScreens.set(producer.producerSocketId, {
+            producerId: producer.producerId,
+            stream: new MediaStream()
+          });
+          return newScreens;
+        });
+
+        const consumer = await handleConsume(producer);
+        if (consumer) {
+          const stream = new MediaStream([consumer.track]);
+          
+          setRemoteScreens(prev => {
+            const newScreens = new Map(prev);
+            newScreens.set(producer.producerSocketId, {
+              producerId: producer.producerId,
+              stream,
+              consumer
+            });
+            return newScreens;
+          });
+        }
+      }
+
       console.log('Handling existing producer:', producer);
       
       // Skip if this is our own producer
@@ -3200,6 +3222,11 @@ function App() {
     }
   };
 
+  // Добавим функцию для проверки, является ли screenProducer локальным
+  const isLocalScreenShare = (producerId) => {
+    return screenProducer && screenProducer.id === producerId;
+  };
+
   if (!isJoined) {
     return (
       <Box sx={styles.root}>
@@ -3334,7 +3361,11 @@ function App() {
                 ))}
 
                 {/* Remote screen shares */}
-                {Array.from(remoteScreens.entries()).map(([peerId, { stream }]) => {
+                {Array.from(remoteScreens.entries()).map(([peerId, { stream, producerId }]) => {
+                  // Пропускаем локальную демонстрацию экрана, так как она уже отображается выше
+                  if (isLocalScreenShare(producerId)) {
+                    return null;
+                  }
                   const peer = peers.get(peerId);
                   return (
                     <Box key={`screen-${peerId}`} sx={styles.videoItem}>
