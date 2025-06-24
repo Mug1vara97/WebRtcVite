@@ -14,19 +14,26 @@ class Room {
         if (!this.peers.has(peer.id)) {
             this.peers.set(peer.id, peer);
             
-            // Broadcast new peer's state to all peers in the room
+            // Broadcast new peer's states to all peers in the room
+            const states = {
+                peerId: peer.id,
+                isMuted: Boolean(peer.isMuted()),
+                isAudioEnabled: Boolean(peer.isAudioEnabled())
+            };
+
+            // Broadcast mute state
             this.io.to(this.id).emit('peerMuteStateChanged', {
-                peerId: peer.id,
-                isMuted: Boolean(peer.isMuted())
+                peerId: states.peerId,
+                isMuted: states.isMuted
             });
 
-            // Also broadcast audio state
+            // Broadcast audio enabled state
             this.io.to(this.id).emit('peerAudioStateChanged', {
-                peerId: peer.id,
-                isEnabled: Boolean(peer.isAudioEnabled())
+                peerId: states.peerId,
+                isEnabled: states.isAudioEnabled
             });
 
-            console.log(`Peer ${peer.id} added to room ${this.id}`);
+            console.log(`Peer ${peer.id} added to room ${this.id} with states:`, states);
         }
     }
 

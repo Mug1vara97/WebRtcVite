@@ -200,6 +200,17 @@ io.on('connection', async (socket) => {
                 isAudioEnabled: Boolean(peer.isAudioEnabled())
             });
 
+            // Immediately broadcast initial states
+            socket.to(roomId).emit('peerMuteStateChanged', {
+                peerId: peer.id,
+                isMuted: peer.isMuted()
+            });
+
+            socket.to(roomId).emit('peerAudioStateChanged', {
+                peerId: peer.id,
+                isEnabled: Boolean(peer.isAudioEnabled())
+            });
+
             console.log(`Peer ${name} (${socket.id}) joined room ${roomId}`);
             console.log('Existing peers:', existingPeers);
             console.log('Existing producers:', existingProducers);

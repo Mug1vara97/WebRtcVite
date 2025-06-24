@@ -1399,7 +1399,7 @@ function App() {
     }
 
     try {
-      // Очищаем старый сокет если есть
+      // Cleanup old socket if exists
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -1413,22 +1413,26 @@ function App() {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         secure: true,
-        rejectUnauthorized: false
+        rejectUnauthorized: false,
+        query: {
+          isMuted: isMuted,
+          isAudioEnabled: isAudioEnabled
+        }
       });
 
-      // Сразу добавляем временный логгер для отладки
+      // Add immediate logger for debugging
       socket.onAny((event, ...args) => {
         console.log('IMMEDIATE SOCKET EVENT:', event, args);
       });
       
-      // Сразу присваиваем сокет в ref
+      // Assign socket to ref
       socketRef.current = socket;
 
       socket.on('connect', () => {
         console.log('Socket connected successfully');
         setIsConnected(true);
         // Set initial states
-        socket.emit('muteState', { isMuted: false });
+        socket.emit('muteState', { isMuted });
         socket.emit('audioState', { isEnabled: isAudioEnabled });
       });
 
@@ -1457,9 +1461,10 @@ function App() {
             newPeers.set(peerId, { 
               id: peerId, 
               name, 
-              isMuted: Boolean(isMuted) 
+              isMuted: Boolean(isMuted),
+              isAudioEnabled: Boolean(isAudioEnabled)
             });
-            console.log('Added new peer to peers map:', { peerId, name });
+            console.log('Added new peer to peers map:', { peerId, name, isMuted, isAudioEnabled });
           }
           return newPeers;
         });

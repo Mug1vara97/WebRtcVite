@@ -11,6 +11,12 @@ class Peer {
         this.muted = false;
         this.audioEnabled = true; // Default audio enabled state
         this.screenProducers = new Map(); // Separate map for screen sharing producers
+
+        // Initialize states from socket if available
+        if (socket.handshake?.query) {
+            this.muted = socket.handshake.query.isMuted === 'true';
+            this.audioEnabled = socket.handshake.query.isAudioEnabled !== 'false';
+        }
     }
 
     setSpeaking(speaking) {
