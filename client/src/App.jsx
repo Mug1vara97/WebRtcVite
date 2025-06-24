@@ -1288,7 +1288,7 @@ function App() {
       setIsScreenSharing(false);
       setRemoteScreens(new Map());
 
-      // Очищаем воркеры определения голоса
+      // Cleanup voice detection workers
       audioRef.current.forEach((peerAudio, peerId) => {
         if (peerAudio instanceof Map && peerAudio.has('voiceDetector')) {
           const voiceDetector = peerAudio.get('voiceDetector');
@@ -1299,7 +1299,7 @@ function App() {
         }
       });
 
-      // Очищаем анализаторы
+      // Cleanup analyzers
       analyserNodesRef.current.forEach(analyser => {
         if (analyser) {
           analyser.disconnect();
@@ -1313,14 +1313,19 @@ function App() {
       });
       animationFramesRef.current.clear();
 
+      // Close socket and transports
       if (socketRef.current) {
         socketRef.current.close();
         socketRef.current = null;
       }
+
+      // Close producer transport
       if (producerTransportRef.current) {
         producerTransportRef.current.close();
         producerTransportRef.current = null;
       }
+
+      // Close consumer transports
       consumerTransportsRef.current.forEach(transport => {
         if (transport) {
           transport.close();
@@ -1328,6 +1333,7 @@ function App() {
       });
       consumerTransportsRef.current.clear();
       
+      // Close producers
       producersRef.current.forEach(producer => {
         if (producer) {
           producer.close();
@@ -1335,6 +1341,7 @@ function App() {
       });
       producersRef.current.clear();
       
+      // Close consumers
       consumersRef.current.forEach(consumer => {
         if (consumer) {
           consumer.close();
@@ -1342,19 +1349,23 @@ function App() {
       });
       consumersRef.current.clear();
 
+      // Cleanup local stream
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
       }
 
+      // Cleanup audio elements
       audioRef.current.forEach(audio => {
-        if (audio) {
+        if (audio instanceof HTMLAudioElement) {
+          audio.pause();
           audio.srcObject = null;
           audio.remove();
         }
       });
       audioRef.current.clear();
 
+      // Cleanup gain nodes
       gainNodesRef.current.forEach(node => {
         if (node) {
           node.disconnect();
@@ -1362,6 +1373,7 @@ function App() {
       });
       gainNodesRef.current.clear();
 
+      // Close audio context
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close();
       }
@@ -2046,12 +2058,17 @@ function App() {
     try {
       console.log('Requesting microphone access...');
       
-      // Cleanup any existing stream first
+      // Cleanup any existing stream and noise suppression first
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => {
           track.stop();
         });
         localStreamRef.current = null;
+      }
+
+      if (noiseSuppressionRef.current) {
+        noiseSuppressionRef.current.cleanup();
+        noiseSuppressionRef.current = null;
       }
 
       // Initialize audio context if needed
@@ -2083,13 +2100,18 @@ function App() {
       localStreamRef.current = stream;
       
       // Initialize noise suppression
-      if (!noiseSuppressionRef.current) {
-        noiseSuppressionRef.current = new NoiseSuppressionManager();
-      }
+      noiseSuppressionRef.current = new NoiseSuppressionManager();
       
       const initResult = await noiseSuppressionRef.current.initialize(stream);
-      if (initResult && isNoiseSuppressed) {
-        await noiseSuppressionRef.current.enable(noiseSuppressionMode);
+      if (!initResult) {
+        throw new Error('Failed to initialize noise suppression');
+      }
+
+      if (isNoiseSuppressed) {
+        const enableResult = await noiseSuppressionRef.current.enable(noiseSuppressionMode);
+        if (!enableResult) {
+          console.warn('Failed to enable noise suppression, continuing without it');
+        }
       }
 
       // Get the processed stream for the producer

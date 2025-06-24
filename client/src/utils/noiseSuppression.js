@@ -34,6 +34,9 @@ export class NoiseSuppressionManager {
 
   async initialize(stream) {
     try {
+      // Cleanup any existing resources first
+      this.cleanup();
+
       if (!stream) {
         console.error('No stream provided');
         return false;
@@ -64,7 +67,13 @@ export class NoiseSuppressionManager {
 
       this.destinationNode = this.audioContext.createMediaStreamDestination();
       
-      this.processedStream.addTrack(this.destinationNode.stream.getAudioTracks()[0]);
+      // Add track to processed stream
+      const destinationTrack = this.destinationNode.stream.getAudioTracks()[0];
+      if (destinationTrack) {
+        this.processedStream.addTrack(destinationTrack);
+      } else {
+        throw new Error('No audio track in destination node');
+      }
 
       console.log('Loading worklet modules...');
       await Promise.all([
@@ -108,6 +117,7 @@ export class NoiseSuppressionManager {
       return true;
     } catch (error) {
       console.error('Failed to initialize noise suppression:', error);
+      this.cleanup();
       return false;
     }
   }
@@ -127,6 +137,7 @@ export class NoiseSuppressionManager {
         return false;
       }
 
+      // Disconnect existing connections
       this.sourceNode.disconnect();
       this.gainNode.disconnect();
 
@@ -146,6 +157,7 @@ export class NoiseSuppressionManager {
           this.noiseGateNode.connect(this.rnnWorkletNode);
           this.rnnWorkletNode.connect(this.gainNode);
           this.gainNode.connect(this.destinationNode);
+          this.currentMode = mode;
           return true;
         default:
           throw new Error('Invalid noise suppression mode');
@@ -158,8 +170,15 @@ export class NoiseSuppressionManager {
       this.currentMode = mode;
 
       if (this.producer) {
-        const newTrack = this.processedStream.getAudioTracks()[0];
-        await this.producer.replaceTrack({ track: newTrack });
+        try {
+          const newTrack = this.processedStream.getAudioTracks()[0];
+          if (newTrack) {
+            await this.producer.replaceTrack({ track: newTrack });
+          }
+        } catch (error) {
+          console.error('Error replacing producer track:', error);
+          return false;
+        }
       }
 
       return true;
@@ -176,30 +195,43 @@ export class NoiseSuppressionManager {
         return false;
       }
 
+      // Disconnect all nodes
       this.sourceNode.disconnect();
       if (this.currentMode) {
         switch (this.currentMode) {
           case 'rnnoise':
-            this.rnnWorkletNode.disconnect();
+            this.rnnWorkletNode?.disconnect();
             break;
           case 'speex':
-            this.speexWorkletNode.disconnect();
+            this.speexWorkletNode?.disconnect();
             break;
           case 'noisegate':
-            this.noiseGateNode.disconnect();
+            this.noiseGateNode?.disconnect();
+            break;
+          case 'combined':
+            this.noiseGateNode?.disconnect();
+            this.rnnWorkletNode?.disconnect();
             break;
         }
       }
       this.gainNode.disconnect();
 
+      // Connect source directly to destination
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.destinationNode);
 
       this.currentMode = null;
 
       if (this.producer) {
-        const newTrack = this.destinationNode.stream.getAudioTracks()[0];
-        await this.producer.replaceTrack({ track: newTrack });
+        try {
+          const newTrack = this.destinationNode.stream.getAudioTracks()[0];
+          if (newTrack) {
+            await this.producer.replaceTrack({ track: newTrack });
+          }
+        } catch (error) {
+          console.error('Error replacing producer track:', error);
+          return false;
+        }
       }
 
       return true;
@@ -215,21 +247,42 @@ export class NoiseSuppressionManager {
 
   cleanup() {
     try {
+      // Disable noise suppression first
       if (this.currentMode) {
         this.disable();
       }
 
-      if (this.audioContext) {
-        this.audioContext.close();
-      }
+      // Disconnect all nodes
+      this.sourceNode?.disconnect();
+      this.gainNode?.disconnect();
+      this.rnnWorkletNode?.disconnect();
+      this.speexWorkletNode?.disconnect();
+      this.noiseGateNode?.disconnect();
 
-      if (this.originalStream) {
-        this.originalStream.getTracks().forEach(track => track.stop());
-      }
-
+      // Destroy worklet nodes
       this.rnnWorkletNode?.destroy?.();
       this.speexWorkletNode?.destroy?.();
 
+      // Stop all tracks in the original stream
+      if (this.originalStream) {
+        this.originalStream.getTracks().forEach(track => {
+          track.stop();
+        });
+      }
+
+      // Stop all tracks in the processed stream
+      if (this.processedStream) {
+        this.processedStream.getTracks().forEach(track => {
+          track.stop();
+        });
+      }
+
+      // Close audio context
+      if (this.audioContext && this.audioContext.state !== 'closed') {
+        this.audioContext.close();
+      }
+
+      // Reset all properties
       this.audioContext = null;
       this.sourceNode = null;
       this.destinationNode = null;
