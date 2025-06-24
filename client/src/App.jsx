@@ -1796,20 +1796,25 @@ function App() {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
         const newMuteState = !isMuted;
+        
+        // Update local track state
         audioTrack.enabled = !newMuteState;
+        console.log('Updated local audio track enabled state:', !newMuteState);
+        
+        // Update all producers that use this track
+        const producers = Array.from(producersRef.current.values());
+        const audioProducers = producers.filter(p => p.track.kind === 'audio');
+        
+        audioProducers.forEach(producer => {
+          producer.track.enabled = !newMuteState;
+          console.log('Updated producer track state:', !newMuteState, 'producer id:', producer.id);
+        });
+
         setIsMuted(newMuteState);
         
         console.log('Sending mute state to server:', newMuteState);
         if (socketRef.current) {
           socketRef.current.emit('muteState', { isMuted: newMuteState });
-          
-          // Update producer track state
-          const producers = Array.from(producersRef.current.values());
-          const audioProducer = producers.find(p => p.track.kind === 'audio');
-          if (audioProducer) {
-            audioProducer.track.enabled = !newMuteState;
-            console.log('Updated audio producer track state:', !newMuteState);
-          }
           
           if (setMuteState) {
             setMuteState(socketRef.current.id, newMuteState);
@@ -2071,6 +2076,7 @@ function App() {
     try {
       console.log('Creating local stream...');
       console.log('Requesting microphone access...');
+      console.log('Current mute state:', isMuted);
 
       // Resume audio context if needed
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -2145,7 +2151,8 @@ function App() {
           opusNack: true
         },
         appData: {
-          streamId: processedStream.id
+          streamId: processedStream.id,
+          initialMuteState: isMuted // Add initial mute state to appData
         }
       });
       
@@ -2160,6 +2167,10 @@ function App() {
       // Store the local stream reference
       localStreamRef.current = processedStream;
 
+      // Ensure the track state is correct after producer creation
+      producer.track.enabled = !isMuted;
+      console.log('Set producer track enabled state after creation:', !isMuted);
+
       // Monitor producer state
       producer.on('transportclose', () => {
         console.log('Producer transport closed');
@@ -2170,6 +2181,12 @@ function App() {
         console.log('Producer track ended');
         producer.close();
       });
+
+      // Send initial mute state to server
+      if (socketRef.current) {
+        console.log('Sending initial mute state to server:', isMuted);
+        socketRef.current.emit('muteState', { isMuted });
+      }
 
       return producer;
     } catch (error) {
